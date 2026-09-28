@@ -1,0 +1,25 @@
+name: Bug report
+description: Report a desktop source-build problem.
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: "For security issues, use SECURITY.md. Never include keys, tokens or dictated content."
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Public commit, macOS version, chip and Node version.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps, expected result and actual result
+    validations:
+      required: true
+  - type: textarea
+    id: checks
+    attributes:
+      label: Checks and sanitized errors
+      description: Say which build or native checks passed or failed.

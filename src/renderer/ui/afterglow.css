@@ -1,0 +1,17 @@
+/* The shell and signal preserve the approved Afterglow study. Native statuses
+   stay immediate; errors and reduced motion never carry ambient animation. */
+.cursor-spine-widget[data-motion="afterglow"] .spine-extension {
+  transition: none;
+  transform-origin: top right;
+  will-change: transform, opacity;
+}
+.cursor-spine-widget[data-motion="afterglow"][data-edge="left"] .spine-extension { transform-origin: top left; }
+.cursor-spine-widget[data-motion="afterglow"][data-edge="top"] .spine-extension { transform-origin: top left; }
+.cursor-spine-widget[data-motion="afterglow"][data-rail-reversed="true"] .spine-extension { transform-origin: bottom right; }
+.cursor-spine-widget[data-motion="afterglow"][data-rail-reversed="true"][data-edge="left"] .spine-extension { transform-origin: bottom left; }
+.cursor-spine-widget[data-motion="afterglow"][data-rail-reversed="true"][data-edge="top"] .spine-extension { transform-origin: top right; }
+.cursor-spine-widget[data-motion="afterglow"] .spine-signal-mark { animation: none; }
+.cursor-spine-widget[data-motion="afterglow"] .spine-signal-field { transition: transform 600ms cubic-bezier(.45,0,.15,1); }
+@media (prefers-reduced-motion: reduce) {
+  .cursor-spine-widget[data-motion="afterglow"] .spine-signal-field { transition: none; }
+}

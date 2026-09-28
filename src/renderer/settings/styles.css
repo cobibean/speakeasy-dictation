@@ -1,0 +1,69 @@
+@import "../ui/hud.css";
+@import "../ui/quiet-index.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  --settings-display-font: var(--font-display, "Fraunces", Georgia, "Times New Roman", serif);
+  --settings-body-font: var(--font-body, "Newsreader", Georgia, "Times New Roman", serif);
+  --settings-mono-font: var(--font-mono, "Spline Sans Mono", ui-monospace, Menlo, Monaco, Consolas, monospace);
+}
+
+body {
+  background: var(--hud-body-bg);
+  color: var(--hud-text);
+  margin: 0;
+  font-family: var(--settings-body-font);
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+.settings-root {
+  height: 100%;
+  padding: 0;
+  color: var(--theme-text);
+  background: var(--theme-surface);
+}
+
+.settings-shell {
+  height: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+  border: 1px solid rgb(var(--hud-accent-rgb) / 0.18);
+  border-radius: 0;
+  background: var(--theme-surface);
+  box-shadow: var(--hud-shadow), var(--hud-inner-top), var(--hud-inner-bottom);
+  overflow: hidden;
+}
+
+.settings-header {
+  display: none;
+}
+
+.settings-kicker {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: none;
+  color: var(--hud-text-dim);
+  font-family: var(--settings-mono-font);
+  line-height: 1.15;
+}
+
+.settings-header h1 {
+  font-family: var(--settings-display-font);
+  margin: 8px 0 0;
+  font-size: 30px;
+  font-weight: 560;
+  letter-spacing: 0;
+  line-height: 1.05;
+}

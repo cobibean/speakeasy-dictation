@@ -1,0 +1,20 @@
+.plan-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.plan-option { min-width: 0; border: 1px solid #d8cec4; border-radius: 12px; padding: 20px 14px 14px; background: #fbf7f1; }
+.plan-option h3 { margin: 0 0 16px; font: 550 24px/1.15 "Newsreader", Georgia, serif; color: #24152e; }
+.plan-option .plan-price { margin: 0 0 8px; font: 650 18px/1.3 "Manrope", sans-serif; color: #24152e; }
+.plan-option .plan-allowance { min-height: 42px; margin: 0 0 18px; font-size: 13px; line-height: 1.5; }
+.plan-picker .plan-option button { width: 100%; min-height: 48px; padding: 10px 8px; font-size: 13px; line-height: 1.4; }
+.plan-option .plan-detail { margin: 12px 0 0; font-size: 12px; line-height: 1.5; color: #655a6c; }
+.plan-picker .plan-note { margin: 18px 0 0; font-size: 12px; line-height: 1.6; color: #655a6c; }
+@media (max-width: 960px) {
+  .plan-options { grid-template-columns: 1fr; }
+  .plan-option { display: grid; grid-template-columns: 1fr 1fr; column-gap: 12px; padding: 16px; }
+  .plan-option h3 { margin: 0 0 8px; }
+  .plan-option .plan-price { text-align: right; }
+  .plan-option .plan-allowance { min-height: 0; margin: 0; align-self: center; }
+  .plan-option .plan-detail { grid-column: 1 / -1; }
+}
+@media (forced-colors: active) {
+  .plan-option { border-color: CanvasText; background: Canvas; }
+  .plan-option h3, .plan-option .plan-price, .plan-option .plan-detail, .plan-picker .plan-note { color: CanvasText; }
+}

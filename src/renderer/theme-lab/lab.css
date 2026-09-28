@@ -1,0 +1,51 @@
+@font-face { font-family: Manrope; src: url('../assets/brand/manrope.ttf') format('truetype'); font-weight: 200 800; font-display: swap; }
+:root { font-family: Manrope, sans-serif; color: #24152e; background: #f6f0e7; font-synthesis: none; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+button, select { font: inherit; }
+button, select { min-height: 38px; border: 1px solid #a89daa; border-radius: 6px; padding: 6px 10px; color: #24152e; background: #fbf7f1; }
+button { cursor: pointer; }
+button:hover { background: #eee6dc; }
+:focus-visible { outline: 3px solid #ad3325; outline-offset: 3px; }
+main { max-width: 1540px; margin: auto; padding: 32px; }
+.lab-header { display: flex; justify-content: space-between; gap: 24px; align-items: start; }
+.eyebrow { margin: 0 0 8px; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; font-weight: 750; }
+h1 { font-size: 38px; letter-spacing: -.04em; margin: 0; }
+p { line-height: 1.6; font-size: 14px; max-width: 850px; }
+.offline { color: #605564; font-size: 12px; white-space: nowrap; padding-top: 6px; }
+.controls { display: flex; flex-wrap: wrap; gap: 18px; align-items: end; padding: 20px 0; border-block: 1px solid #d4cbd2; margin-top: 16px; }
+label { display: grid; gap: 6px; font-size: 12px; font-weight: 650; }
+.controls button { margin-left: auto; }
+.method { max-width: none; font-size: 12px; color: #605564; margin: 18px 0 24px; }
+.theme-jumps { display: flex; flex-wrap: wrap; gap: 10px 20px; margin-bottom: 24px; }
+.theme-jumps a { color: #65516a; font-size: 12px; text-underline-offset: 4px; }
+.theme-grid { display: grid; grid-template-columns: repeat(3, minmax(280px, 1fr)); gap: 22px; }
+.theme-card { min-width: 0; border: 1px solid #d4cbd2; border-radius: 10px; overflow: hidden; background: #fbf7f1; scroll-margin-top: 16px; }
+.card-heading { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 16px 16px 0; }
+h2 { font-size: 18px; margin: 0; }
+.card-heading h2 { flex: 1; }
+.card-heading h2 small { font-size: 10px; color: #76647b; margin-right: 9px; }
+.card-heading button { font-size: 11px; }
+.palette-block { padding: 14px 16px 16px; }
+h3 { margin: 0 0 8px; font-size: 10px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; color: #605564; }
+.palette { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.palette > div { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.chip { height: 20px; display: block; border: 1px solid rgb(36 21 46 / 15%); border-radius: 3px; }
+.palette code { font-size: 10px; }
+.palette small { font-size: 10px; color: #605564; }
+.observed-state { font-size: 11px; margin: 10px 0 0; color: #605564; }
+.contrast-result { font-size: 11px; line-height: 1.8; margin-top: 8px; color: #31552e; }
+.contrast-result[data-pass="false"] { color: #a52d25; }
+.contrast-result summary { cursor: pointer; }
+iframe { display: block; border: 0; }
+.theme-card iframe { width: 100%; height: var(--frame-height); border-block: 1px solid #d4cbd2; }
+.inspector { margin-top: 48px; scroll-margin-top: 20px; border-top: 1px solid #d4cbd2; padding-top: 24px; }
+.inspector-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.inspector h2 { font-size: 28px; }
+.settings-scroll { overflow: hidden; background: #e6ddd2; outline: 1px solid #d4cbd2; border-radius: 10px; max-width: 764px; }
+.settings-scroll iframe { width: 764px; height: 600px; transform-origin: top left; }
+.readout { display: flex; flex-wrap: wrap; gap: 14px 24px; padding: 16px 0; font-size: 12px; }
+footer { border-top: 1px solid #d4cbd2; margin-top: 30px; padding-top: 20px; color: #605564; font-size: 12px; line-height: 1.6; }
+@media (max-width: 1050px) { .theme-grid { grid-template-columns: repeat(2, minmax(280px, 1fr)); } .lab-header { display: block; } }
+@media (max-width: 650px) { main { padding: 18px; } .theme-grid { grid-template-columns: minmax(0, 1fr); } .controls { gap: 12px; } .controls button { margin: 0; } .inspector-heading { align-items: start; flex-direction: column; } .offline { white-space: normal; } }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
