@@ -140,6 +140,7 @@ const App = (): JSX.Element => {
   const [authBusy, setAuthBusy] = useState(false);
   const [runtimeState, setRuntimeState] = useState<SpeakeasyRuntimeState>(createEmptyRuntimeState);
   const [cleanupNoticeVisible, setCleanupNoticeVisible] = useState(false);
+  const [pasteNoticeDismissed, setPasteNoticeDismissed] = useState(false);
   const [initialApiKey, setInitialApiKey] = useState('');
   const [initialProductAuthEmail, setInitialProductAuthEmail] = useState('');
   const [initialPolishBeforePaste, setInitialPolishBeforePaste] = useState(true);
@@ -178,6 +179,9 @@ const App = (): JSX.Element => {
     cleanupStrength !== initialCleanupStrength;
   const settingsDirty = isDirty || widgetOpacity !== initialWidgetOpacity;
   const lastCleanupOutcome = runtimeState.diagnostics.lastCleanupOutcome;
+  const pasteRecovery = status === 'error' && runtimeState.diagnostics.lastErrorCode === 'paste-clipboard-only';
+  const pasteRecoveryNotice = pasteRecovery && !pasteNoticeDismissed;
+  const visibleStatus = pasteRecovery && pasteNoticeDismissed ? 'idle' : status;
   const cleanupFallback = status === 'idle' && cleanupNoticeVisible && !!cleanupFallbackMessage(lastCleanupOutcome);
   // Diagnostics retain the result; the visible notice has an independent lifetime.
   // The pipeline clears the outcome before each request, including repeated fallbacks.
@@ -185,13 +189,21 @@ const App = (): JSX.Element => {
     setCleanupNoticeVisible(!!cleanupFallbackMessage(lastCleanupOutcome));
   }, [lastCleanupOutcome]);
   useEffect(() => {
-    if (status === 'listening') setCleanupNoticeVisible(false);
+    if (status === 'listening') { setCleanupNoticeVisible(false); setPasteNoticeDismissed(false); }
   }, [status]);
   useEffect(() => {
     if (!cleanupFallback) return;
     const timer = window.setTimeout(() => setCleanupNoticeVisible(false), 30_000);
     return () => window.clearTimeout(timer);
   }, [cleanupFallback, lastCleanupOutcome]);
+  useEffect(() => {
+    setPasteNoticeDismissed(false);
+  }, [runtimeState.diagnostics.lastErrorCode]);
+  useEffect(() => {
+    if (!pasteRecoveryNotice) return;
+    const timer = window.setTimeout(() => setPasteNoticeDismissed(true), 30_000);
+    return () => window.clearTimeout(timer);
+  }, [pasteRecoveryNotice]);
   const layout = useMemo(() => getQuietWidgetLayout(attachment.edge, widgetSize, panelOpen), [attachment.edge, widgetSize, panelOpen]);
 
   const stopTracks = (mediaStream: MediaStream | null) => {
@@ -775,7 +787,7 @@ const App = (): JSX.Element => {
       window.removeEventListener('resize', reportLayout);
       window.removeEventListener('animationend', reportLayout);
     };
-  }, [layout, status, cleanupFallback, attachment.bookmarkOffset?.x, attachment.bookmarkOffset?.y, attachment.railReversed]);
+  }, [layout, visibleStatus, cleanupFallback, pasteRecoveryNotice, attachment.bookmarkOffset?.x, attachment.bookmarkOffset?.y, attachment.railReversed]);
 
   useEffect(() => {
     const handleDeviceChange = () => {
@@ -814,7 +826,7 @@ const App = (): JSX.Element => {
   }, [panelOpen]);
 
   const getStatusText = (): string => {
-    switch (status) {
+    switch (visibleStatus) {
       case 'listening':
         return 'Listening';
       case 'transcribing':
@@ -844,10 +856,12 @@ const App = (): JSX.Element => {
           edge={attachment.edge}
           bookmarkOffset={attachment.bookmarkOffset}
           railReversed={attachment.railReversed}
-          status={status}
+          status={visibleStatus}
           statusLabel={statusLabel}
           cleanupFallback={cleanupFallback}
           onDismissCleanup={() => setCleanupNoticeVisible(false)}
+          pasteRecovery={pasteRecoveryNotice}
+          onDismissPasteRecovery={() => setPasteNoticeDismissed(true)}
           opacity={widgetOpacity}
           reduceMotion={widgetTheme === 'high-contrast'}
           settingsOpen={panelOpen}

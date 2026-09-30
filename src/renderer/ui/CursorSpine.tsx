@@ -18,6 +18,8 @@ interface CursorSpineProps {
   statusLabel: string;
   cleanupFallback?: boolean;
   onDismissCleanup?: () => void;
+  pasteRecovery?: boolean;
+  onDismissPasteRecovery?: () => void;
   opacity: number;
   settingsOpen: boolean;
   onToggleSettings: () => void;
@@ -48,6 +50,8 @@ const CursorSpine = ({
   statusLabel,
   cleanupFallback = false,
   onDismissCleanup,
+  pasteRecovery = false,
+  onDismissPasteRecovery,
   opacity,
   settingsOpen,
   onToggleSettings,
@@ -104,13 +108,13 @@ const CursorSpine = ({
       </button>
       <span className="spine-state-pip" aria-hidden="true" />
     </div>
-    {cleanupFallback ? (
+    {cleanupFallback || pasteRecovery ? (
       <button
         type="button"
         className="spine-status-label no-drag"
         aria-label={`${statusLabel}. Dismiss notice`}
         title="Dismiss notice"
-        onClick={onDismissCleanup}
+        onClick={pasteRecovery ? onDismissPasteRecovery : onDismissCleanup}
       >{statusLabel}</button>
     ) : <span className="spine-status-label">{statusLabel}</span>}
 

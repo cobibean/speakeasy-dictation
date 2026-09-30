@@ -5,6 +5,9 @@
 #include <Carbon/Carbon.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#import <AppKit/AppKit.h>
+
+static const char *failure_reason = "none";
 
 typedef struct {
   AXUIElementRef app, window, field;
@@ -59,20 +62,31 @@ static bool editable_field(AXUIElementRef field) {
 }
 
 static PasteTarget *capture_target(void) {
-  if (!AXIsProcessTrusted() || IsSecureEventInputEnabled()) return NULL;
+  failure_reason = "none";
+  if (!AXIsProcessTrusted()) { failure_reason = "accessibility-unavailable"; return NULL; }
+  if (IsSecureEventInputEnabled()) { failure_reason = "secure-input"; return NULL; }
   PasteTarget *target = calloc(1, sizeof(PasteTarget));
-  if (!target) return NULL;
-  AXUIElementRef system = AXUIElementCreateSystemWide();
-  AXUIElementSetMessagingTimeout(system, 0.15f);
-  target->app = copy_element(system, kAXFocusedApplicationAttribute);
-  CFRelease(system);
-  if (!target->app) goto invalid;
+  if (!target) { failure_reason = "allocation-failed"; return NULL; }
+  // System-wide AXFocusedApplication can fail while the app's AX tree is healthy.
+  // Resolve its foreground PID through AppKit, retaining field/selection checks.
+  @autoreleasepool {
+    target->pid = NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier;
+  }
+  if (target->pid <= 0) { failure_reason = "frontmost-unavailable"; goto invalid; }
+  target->app = AXUIElementCreateApplication(target->pid);
+  if (!target->app) { failure_reason = "allocation-failed"; goto invalid; }
   AXUIElementSetMessagingTimeout(target->app, 0.15f);
-  if (AXUIElementGetPid(target->app, &target->pid) != kAXErrorSuccess || target->pid <= 0) goto invalid;
   target->window = copy_element(target->app, kAXFocusedWindowAttribute);
   target->field = copy_element(target->app, kAXFocusedUIElementAttribute);
-  if (!target->window || !target->field || !editable_field(target->field)) goto invalid;
+  if (!target->window) { failure_reason = "window-unavailable"; goto invalid; }
+  if (!target->field) { failure_reason = "field-unavailable"; goto invalid; }
+  if (!editable_field(target->field)) { failure_reason = "field-not-editable"; goto invalid; }
   target->has_selection = read_selection(target->field, &target->selection);
+  @autoreleasepool {
+    if (NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier != target->pid) {
+      failure_reason = "focus-changed"; goto invalid;
+    }
+  }
   return target;
 invalid:
   release_target(target);
@@ -97,6 +111,7 @@ static napi_value paste(napi_env env, napi_callback_info info) {
   size_t count = 1;
   PasteTarget *target = NULL;
   bool delivered = false;
+  failure_reason = "target-unavailable";
   napi_get_cb_info(env, info, &count, &argument, NULL, NULL);
   if (count != 1 || napi_get_value_external(env, argument, (void **)&target) != napi_ok || !target) goto done;
   PasteTarget *current = capture_target();
@@ -109,7 +124,9 @@ static napi_value paste(napi_env env, napi_callback_info info) {
   release_target(current);
   CGEventFlags modifiers = CGEventSourceFlagsState(kCGEventSourceStateHIDSystemState)
     & (kCGEventFlagMaskCommand | kCGEventFlagMaskShift | kCGEventFlagMaskControl | kCGEventFlagMaskAlternate | kCGEventFlagMaskSecondaryFn);
-  if (!matches || modifiers) goto done;
+  if (!matches) { failure_reason = "focus-changed"; goto done; }
+  if (modifiers) { failure_reason = "modifier-held"; goto done; }
+  failure_reason = "allocation-failed";
   CGEventSourceRef source = CGEventSourceCreate(kCGEventSourceStatePrivate);
   if (!source) goto done;
   CGEventRef events[4] = {
@@ -128,6 +145,7 @@ static napi_value paste(napi_env env, napi_callback_info info) {
       CGEventPostToPid(target->pid, events[i]);
     }
     delivered = true;
+    failure_reason = "none";
   }
   for (int i = 0; i < 4; i++) if (events[i]) CFRelease(events[i]);
 done:
@@ -136,12 +154,20 @@ done:
   return result;
 }
 
+static napi_value failureReason(napi_env env, napi_callback_info info) {
+  (void)info;
+  napi_value result;
+  napi_create_string_utf8(env, failure_reason, NAPI_AUTO_LENGTH, &result);
+  return result;
+}
+
 static napi_value initialize(napi_env env, napi_value exports) {
   napi_property_descriptor methods[] = {
     {"capture", NULL, capture, NULL, NULL, NULL, napi_default, NULL},
-    {"paste", NULL, paste, NULL, NULL, NULL, napi_default, NULL}
+    {"paste", NULL, paste, NULL, NULL, NULL, napi_default, NULL},
+    {"failureReason", NULL, failureReason, NULL, NULL, NULL, napi_default, NULL}
   };
-  napi_define_properties(env, exports, 2, methods);
+  napi_define_properties(env, exports, 3, methods);
   return exports;
 }
 NAPI_MODULE(NODE_GYP_MODULE_NAME, initialize)
