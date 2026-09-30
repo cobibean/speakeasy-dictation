@@ -1,6 +1,7 @@
 export interface CaptureGate {
   requestStart: () => number | null;
   markRecording: (token: number) => boolean;
+  isStarting: (token: number) => boolean;
   requestStop: () => 'cancel-start' | 'stop-recording' | 'ignore';
   fail: (token: number) => boolean;
   beginProcessing: () => void;
@@ -30,6 +31,7 @@ export const createCaptureGate = (): CaptureGate => {
       state = 'recording';
       return true;
     },
+    isStarting(token) { return state === 'starting' && activeToken === token; },
     requestStop() {
       if (state === 'starting') {
         state = 'idle';

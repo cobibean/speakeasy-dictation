@@ -1,3 +1,4 @@
+import { captureMacPasteTarget, pasteToMacTarget, type MacPasteTarget } from './native-macos-paste.js';
 import { clipboard } from 'electron';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -19,7 +20,9 @@ const execFileAsync = promisify(execFile);
 
 export const pasteText = async (
   text: string,
-  platform: NodeJS.Platform = process.platform
+  platform: NodeJS.Platform = process.platform,
+  onTiming?: (phase: 'main.clipboard_write' | 'main.clipboard_verify' | 'main.paste_command', ms: number) => void,
+  target: MacPasteTarget = captureMacPasteTarget()
 ): Promise<void> => {
   if (platform !== 'darwin' && platform !== 'win32') {
     throw new SpeakeasyError(
@@ -29,7 +32,8 @@ export const pasteText = async (
   }
 
   try {
-    await pasteTextWithExecutor(text, clipboard, execFileAsync, platform as PastePlatform);
+    await pasteTextWithExecutor(text, clipboard, execFileAsync, platform as PastePlatform, onTiming,
+      platform === 'darwin' ? () => pasteToMacTarget(target) : undefined);
   } catch (error) {
     if (error instanceof ClipboardOnlyPasteError) {
       throw new SpeakeasyError(

@@ -1,3 +1,7 @@
+import { beginStreamingCapture, appendStreamingCapture, cancelStreamingCapture, cancelAllStreamingCaptures } from './streaming-capture.js';
+import { takeMacPasteTarget, forgetMacPasteTarget } from './native-macos-paste.js';
+import { isPasteFocusRecovery } from './paste-executor.js';
+import { CaptureUsageGuard } from './capture-usage-guard.js';
 import { startActivationNudgeScheduler } from './activation-nudge-scheduler.js';
 import { workflowPresetSettings } from '../shared/workflow-presets.js';
 import { createSupportBundle, supportLog, supportFailure } from './support-logger.js';
@@ -20,6 +24,7 @@ import {
   isHotkeyRecording,
   getHotkeyLabel,
   getHotkeyMode,
+  getHotkeyCaptureTarget,
   recoverHeldHotkey,
   registerHotkey,
   setHotkeyCaptureTarget,
@@ -28,7 +33,8 @@ import {
 } from './hotkey.js';
 import {
   HOTKEY_RECOVERY_POWER_EVENTS,
-  shouldClearRecoveredHotkeyError
+  shouldClearRecoveredHotkeyError,
+  shouldPreserveOnboardingCaptureTarget
 } from './hotkey-core.js';
 import {
   applyUsageSnapshot,
@@ -155,6 +161,7 @@ const broadcastStatus = (status: OverlayStatus): void => {
 const runPipeline: typeof runRawPipeline = (options) => withUpdateActivity(() => runRawPipeline(options));
 
 let processingEpoch = 0;
+const captureUsageGuard = new CaptureUsageGuard();
 
 const broadcastRuntimeState = (): void => {
   const snapshot = getRuntimeState();
@@ -312,6 +319,7 @@ const getSettingsSnapshot = (): SpeakeasySettings => {
   return {
     groqApiKey: config.capabilities.byoApiKey ? getGroqApiKey() : '',
     polishBeforePaste: store.get('polishBeforePaste') ?? true,
+    dictationSounds: store.get('dictationSounds') ?? true,
     hotkey: store.get('hotkey') ?? DEFAULT_HOTKEY_ID,
     cleanupStrength: store.get('cleanupStrength') ?? 'minimal',
     widgetForm: store.get('widgetForm') ?? 'pill',
@@ -554,11 +562,18 @@ const applyHostedSetupRuntime = (state: HostedSetupBootstrapState): void => {
     });
   }
 
+  const preserveSetupTarget = shouldPreserveOnboardingCaptureTarget({
+    currentTarget: getHotkeyCaptureTarget(),
+    onboardingVisible: getOnboardingWindow()?.isVisible() ?? false,
+    setupReason: state.setup.reason,
+    microphoneReady: state.device.microphoneStatus === 'granted',
+    accessibilityReady: state.device.accessibilityStatus !== 'missing'
+  });
   if (state.setup.destination === 'hud' && state.mode === 'first-run') {
-    setHotkeyCaptureTarget('overlay');
+    if (!preserveSetupTarget) setHotkeyCaptureTarget('overlay');
     setLastErrorCode(errorAfterSetupReady(getRuntimeState().diagnostics.lastErrorCode));
   } else if (getStore().get('setupCompletedOnce')) {
-    setHotkeyCaptureTarget('inactive');
+    if (!preserveSetupTarget) setHotkeyCaptureTarget('inactive');
     const recoveryError = state.requestedStep === 8
       ? 'paste-failed'
       : state.requestedStep === 5 && state.device.accessibilityStatus === 'missing'
@@ -856,6 +871,7 @@ const bootstrap = async (): Promise<void> => {
     });
     ipcMain.handle(IPC_CHANNELS.AUTH_SIGN_OUT, async () => {
       processingEpoch += 1;
+      cancelAllStreamingCaptures();
       sendRecordingRecovery('account-signed-out');
       await signOutProduct();
       getStore().set('pendingBillingConfirmation', null);
@@ -1221,6 +1237,7 @@ const bootstrap = async (): Promise<void> => {
     if (!payload || typeof payload !== 'object') return;
     const { event, captureId, code } = payload as Record<string, unknown>;
     if (typeof event !== 'string' || !['requested', 'listening', 'stopped', 'failed', 'canceled'].includes(event)) return;
+    if ((event === 'failed' || event === 'canceled') && typeof captureId === 'string') forgetMacPasteTarget(captureId);
     supportLog(event === 'failed' ? 'capture.failed' : 'capture.stage', { captureId, code, stage: event });
   });
 
@@ -1342,6 +1359,7 @@ const bootstrap = async (): Promise<void> => {
 
     ipcMain.handle(IPC_CHANNELS.CONSENT_WITHDRAW, async () => {
       processingEpoch += 1;
+      cancelAllStreamingCaptures();
       sendRecordingRecovery('consent-withdrawn');
       setHotkeyCaptureTarget('inactive');
       await recordHostedProcessingConsent('withdrawn', 'settings');
@@ -1358,6 +1376,7 @@ const bootstrap = async (): Promise<void> => {
       result: Awaited<ReturnType<typeof deleteHostedProductAccount>>
     ) => {
       processingEpoch += 1;
+      cancelAllStreamingCaptures();
       sendRecordingRecovery('account-deleted');
       setHotkeyCaptureTarget('inactive');
       await signOutProduct().catch(() => undefined);
@@ -1378,6 +1397,7 @@ const bootstrap = async (): Promise<void> => {
         } catch (error) {
           if (await hasPendingHostedAccountDeletion().catch(() => false)) {
             processingEpoch += 1;
+            cancelAllStreamingCaptures();
             sendRecordingRecovery('account-deletion-pending');
             setHotkeyCaptureTarget('inactive');
             updateAccountLifecycleState({
@@ -1557,9 +1577,25 @@ const bootstrap = async (): Promise<void> => {
     overlay.setIgnoreMouseEvents(ignore, { forward: true });
   });
 
+  const isOverlaySender = (event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent) => event.sender === getOverlayWindow()?.webContents;
+  ipcMain.handle(IPC_CHANNELS.STREAM_BEGIN, (event, captureId: unknown) => {
+    if (!isOverlaySender(event) || !isCaptureId(captureId)) throw new SpeakeasyError('transcription-failed', 'Invalid live capture.');
+    return beginStreamingCapture(captureId);
+  });
+  ipcMain.handle(IPC_CHANNELS.STREAM_APPEND, (event, captureId: unknown, chunk: unknown) => {
+    if (!isOverlaySender(event) || !isCaptureId(captureId) || !(chunk instanceof ArrayBuffer) || chunk.byteLength > 65536) throw new SpeakeasyError('transcription-failed', 'Invalid live audio.');
+    return appendStreamingCapture(captureId, chunk);
+  });
+  ipcMain.on(IPC_CHANNELS.STREAM_CANCEL, (event, captureId: unknown) => {
+    if (isOverlaySender(event) && isCaptureId(captureId)) cancelStreamingCapture(captureId);
+  });
+  app.on('before-quit', cancelAllStreamingCaptures);
+  getOverlayWindow()?.webContents.on('render-process-gone', cancelAllStreamingCaptures);
+
   ipcMain.handle(IPC_CHANNELS.CAPTURE_PROCESS, async (_event, payload: AudioCapturePayload) => {
     const validation = validateAudioCapturePayload(payload);
     if (!validation.valid) {
+      if (isCaptureId(payload?.captureId)) cancelStreamingCapture(payload.captureId);
       supportLog('capture.failed', { stage: 'validation', code: 'transcription-failed' });
       setLastErrorCode('transcription-failed');
       broadcastStatus('error');
@@ -1567,7 +1603,9 @@ const bootstrap = async (): Promise<void> => {
     }
     const handlerStartedAtMs = performance.now();
     const captureEpoch = processingEpoch;
+    const usageSequence = captureUsageGuard.startCapture();
     const captureId = normalizeCaptureId(payload.captureId);
+    const pasteTarget = takeMacPasteTarget(captureId);
     logLatencyMarks(captureId, payload.clientLatencyMarks);
     try {
       const settings = getSettingsSnapshot();
@@ -1597,13 +1635,16 @@ const bootstrap = async (): Promise<void> => {
           const pipelineResult = await runPipeline({
             ...payload,
             captureId,
+            pasteTarget,
             apiKey: settings.groqApiKey,
             polishBeforePaste: settings.polishBeforePaste,
             cleanupStrength: settings.cleanupStrength,
             onTranscribing: () => broadcastStatus('transcribing'),
             onPolishing: () => broadcastStatus('polishing'),
             onCleanup: (outcome) => updateDiagnosticsState({ lastCleanupOutcome: outcome }),
-            onUsage: (usage) => applyUsageSnapshot(usage),
+            onUsage: usage => {
+              if (captureUsageGuard.accept(usageSequence, captureEpoch === processingEpoch)) applyUsageSnapshot(usage);
+            },
             shouldDeliver: () => captureEpoch === processingEpoch
           });
           finalTranscript = pipelineResult.text;
@@ -1625,7 +1666,8 @@ const bootstrap = async (): Promise<void> => {
         const errorCode = toErrorCode(error, 'transcription-failed');
         if (
           hostedProductRuntime.enabled &&
-          (errorCode === 'paste-failed' || errorCode === 'paste-clipboard-only')
+          (errorCode === 'paste-failed' || errorCode === 'paste-clipboard-only') &&
+          !isPasteFocusRecovery(error)
         ) {
           getStore().set('pasteReadinessInvalid', true);
           if (getStore().get('setupCompletedOnce')) {
@@ -1652,6 +1694,9 @@ const bootstrap = async (): Promise<void> => {
         throw error;
       }
     } finally {
+      // Also close a stream when a preflight/paste readiness check rejects the
+      // capture before the service consumes it. Completed streams are removed.
+      cancelStreamingCapture(captureId);
       logLatencyMark(captureId, 'main.ipc_handler', performance.now() - handlerStartedAtMs);
     }
   });

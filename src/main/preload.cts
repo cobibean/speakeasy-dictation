@@ -2,6 +2,9 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 const IPC_CHANNELS = {
   CAPTURE_PROCESS: 'capture:process',
+  STREAM_BEGIN: 'capture:stream-begin',
+  STREAM_APPEND: 'capture:stream-append',
+  STREAM_CANCEL: 'capture:stream-cancel',
   OVERLAY_LAYOUT_SET: 'overlay:layout-set',
   OVERLAY_MOUSE_PASSTHROUGH: 'overlay:mouse-passthrough',
   OVERLAY_ATTACHMENT_CHANGED: 'overlay:attachment-changed',
@@ -96,6 +99,7 @@ type LatencyMarkPayload = {
   };
 };
 type AudioCapturePayload = {
+  streaming?: boolean;
   audioBuffer: ArrayBuffer;
   mimeType: string;
   durationMs: number;
@@ -104,9 +108,12 @@ type AudioCapturePayload = {
 };
 
 contextBridge.exposeInMainWorld('speakeasy', {
-  onRecordingStart: (callback: VoidCallback): Cleanup => {
-    ipcRenderer.on(IPC_CHANNELS.RECORDING_START, callback);
-    return () => ipcRenderer.removeListener(IPC_CHANNELS.RECORDING_START, callback);
+  onRecordingStart: (callback: (captureId?: string) => void): Cleanup => {
+    const listener = (_event: unknown, captureId?: unknown) => callback(
+      typeof captureId === 'string' && /^cap_[0-9a-f-]{36}$/i.test(captureId) ? captureId : undefined
+    );
+    ipcRenderer.on(IPC_CHANNELS.RECORDING_START, listener);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.RECORDING_START, listener);
   },
 
   onRecordingStop: (callback: VoidCallback): Cleanup => {
@@ -126,6 +133,9 @@ contextBridge.exposeInMainWorld('speakeasy', {
     return () => ipcRenderer.removeListener(IPC_CHANNELS.STATUS_UPDATE, listener);
   },
 
+  beginStreamingCapture: (captureId: string) => ipcRenderer.invoke(IPC_CHANNELS.STREAM_BEGIN, captureId),
+  appendStreamingCapture: (captureId: string, chunk: ArrayBuffer) => ipcRenderer.invoke(IPC_CHANNELS.STREAM_APPEND, captureId, chunk),
+  cancelStreamingCapture: (captureId: string) => ipcRenderer.send(IPC_CHANNELS.STREAM_CANCEL, captureId),
   processAudioCapture: async (payload: AudioCapturePayload) => {
     const invokeStartedAtMs = performance.now();
     try {

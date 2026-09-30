@@ -22,8 +22,10 @@ by these instructions.
   Otherwise install that exact Node version from [Node.js](https://nodejs.org/en/download).
 - Use an arm64 terminal/Node process, not a terminal running under Rosetta.
   `node -p process.arch` should print `arm64`.
-- If dependency installation needs to compile a native addon, install Apple's
-  Command Line Tools with `xcode-select --install` and a supported Python 3.
+- Install Apple's Command Line Tools with `xcode-select --install`. The Mac
+  build compiles its small paste bridge using Clang and the Node development
+  headers included with the pinned Node installation. If dependency installation
+  also needs to compile an addon, use a supported Python 3.
   [node-gyp's macOS prerequisites](https://github.com/nodejs/node-gyp#on-macos)
   explain those tools. They are not a signing identity or a paid Apple membership.
 
@@ -99,11 +101,11 @@ delivery. A development run may appear as Electron in the permission list;
 grant the process that macOS actually prompts for. Restart the development app
 after changing permissions if the status does not refresh.
 
-Automatic paste also uses macOS Automation to send Command-V through **System
-Events**. If macOS asks to allow that control, approve it for the development
-process you launched. If you declined, check **Privacy & Security → Automation**
-and enable **System Events** under that process. Until access is available,
-use clipboard recovery and paste manually.
+Automatic paste uses Accessibility to check the original app, window, field,
+and supported selection before submitting Command-V directly to that app.
+If the target changed, cannot be verified, or a modifier is still held, your
+text stays on the clipboard for manual recovery. The Mac paste path does not
+invoke System Events or require an Automation grant.
 
 Click into an ordinary editable field in a text editor. Hold **Right Option**,
 speak a short English sentence, then release. The key is configurable in
@@ -135,7 +137,7 @@ stop a running watch loop. Re-run the typecheck and both builds after code chang
 | Build asks for Product configuration or app asks for hosted sign-in | Check the clean-shell variables and environment files above, then rerun both builds. Do not obtain hosted credentials to work around an OSS setup error. |
 | App does not hear you or detect the key | Check Microphone/Accessibility for the prompted development process and the selected hotkey, then restart. Quit other dictation instances that could share the key. |
 | Key is Loaded but processing fails | Check the app error, key validity, model permissions, provider account billing/rate limits and internet. Loaded does not validate the key. |
-| Text did not appear in the target field | Use clipboard/manual recovery in the original field; check Accessibility and Automation → System Events for the development process, then try an ordinary text editor. Do not assume an app accepted text solely because a paste command ran. |
+| Text did not appear in the target field | Use clipboard/manual recovery in the original field; check Accessibility for the development process and keep the original field focused, then try an ordinary text editor. Do not assume an app accepted text solely because a paste command ran. |
 | Watch page is blank or port is in use | Stop this watch loop with Control-C, check for another dev server on 5173, then restart. Use `npm run dev` for a built local run. |
 
 For source-build help, contact [speakeasy. support](https://speakeasywords.com/support)

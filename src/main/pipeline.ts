@@ -1,3 +1,4 @@
+import type { MacPasteTarget } from './native-macos-paste.js';
 import { supportLog, supportFailure } from './support-logger.js';
 import type { CleanupOutcome } from '../shared/cleanup-outcome.js';
 import { pasteText } from './paste.js';
@@ -26,6 +27,7 @@ interface RunPipelineOptions extends AudioCapturePayload {
   onUsage: (usage: ProductUsageSnapshot) => void;
   shouldDeliver?: () => boolean;
   delivery?: 'paste' | 'return';
+  pasteTarget?: MacPasteTarget;
   operationContext?: 'dictation' | 'onboarding' | 'test';
   normalAllowanceConfirmed?: boolean;
 }
@@ -38,6 +40,7 @@ export interface PipelineResult {
 
 export const runPipeline = async ({
   audioBuffer,
+  streaming,
   mimeType,
   durationMs,
   captureId,
@@ -50,6 +53,7 @@ export const runPipeline = async ({
   onUsage,
   shouldDeliver = () => true,
   delivery = 'paste',
+  pasteTarget = null,
   operationContext = 'dictation',
   normalAllowanceConfirmed = false
 }: RunPipelineOptions): Promise<PipelineResult> => {
@@ -64,6 +68,7 @@ export const runPipeline = async ({
   try {
     result = await service.processCapture({
       captureId,
+      streaming,
       audioBuffer,
       mimeType,
       durationMs,
@@ -132,10 +137,21 @@ export const runPipeline = async ({
       ? await settleHostedOperationPaste({
           operationId: result.operationId,
           outbox: getHostedOperationOutbox(),
-          paste: () => pasteText(result.text),
-          acknowledge: acknowledgeHostedOperation
+          paste: () => pasteText(result.text, process.platform, (phase, ms) => logLatencyMark(captureId, phase, ms), pasteTarget),
+          acknowledge: acknowledgeHostedOperation,
+          background: true,
+          isCurrent: shouldDeliver,
+          onTiming: (phase, ms) => logLatencyMark(captureId, {
+            pending: 'main.outbox_pending', paste: 'main.paste_call',
+            persist: 'main.outbox_persist', acknowledge: 'main.acknowledge'
+          }[phase] as import('../shared/latency.js').LatencyPhase, ms),
+          onAcknowledged: acknowledgment => {
+            if (shouldDeliver() && acknowledgment && typeof acknowledgment === 'object' && 'usage' in acknowledgment) {
+              onUsage((acknowledgment as { usage: ProductUsageSnapshot }).usage);
+            }
+          }
         })
-      : (await pasteText(result.text), undefined);
+      : (await pasteText(result.text, process.platform, (phase, ms) => logLatencyMark(captureId, phase, ms), pasteTarget), undefined);
     if (
       acknowledgment &&
       typeof acknowledgment === 'object' &&

@@ -75,6 +75,7 @@ export interface ProductTranscriptionResponse {
   cleanupOutcome?: CleanupOutcome;
   usage: ProductUsageSnapshot;
   serverTiming?: ServerTimingSnapshot;
+  providerUsage?: { promptTokens: number; completionTokens: number };
 }
 
 export type ProductPasteAcknowledgment = 'pasted' | 'paste_failed' | 'discarded';

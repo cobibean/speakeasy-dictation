@@ -90,6 +90,7 @@ const App = (): JSX.Element => {
   const [apiKey, setApiKey] = useState('');
   const [productAuthEmail, setProductAuthEmail] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
+  const [dictationSounds, setDictationSounds] = useState(true);
   const [polishBeforePaste, setPolishBeforePaste] = useState(true);
   const [cleanupStrength, setCleanupStrength] = useState<CleanupStrength>('minimal');
   const [hotkey, setHotkey] = useState(DEFAULT_HOTKEY_ID);
@@ -120,6 +121,7 @@ const App = (): JSX.Element => {
     setCleanupStrength(value => reconcileSettingDraft(value, previous?.cleanupStrength, settings.cleanupStrength));
     setInitialCleanupStrength(settings.cleanupStrength);
     setShowWidgetOverFullScreenApps(settings.showWidgetOverFullScreenApps ?? true);
+    setDictationSounds(settings.dictationSounds ?? true);
     setHotkey(settings.hotkey);
     setWidgetSize(settings.widgetSize ?? DEFAULT_WIDGET_SIZE_ID);
     setWidgetTheme(settings.widgetTheme ?? DEFAULT_WIDGET_THEME_ID);
@@ -268,7 +270,9 @@ const App = (): JSX.Element => {
           productAuthEmail={productAuthEmail}
           showApiKey={showApiKey}
           hasApiKey={hasApiKey}
-          polishBeforePaste={polishBeforePaste}
+          dictationSounds={dictationSounds}
+          onDictationSoundsChange={async enabled => { await window.speakeasy?.setSettings('dictationSounds', enabled); }}
+              polishBeforePaste={polishBeforePaste}
           cleanupStrength={cleanupStrength}
           hotkey={hotkey}
           widgetSize={widgetSize}

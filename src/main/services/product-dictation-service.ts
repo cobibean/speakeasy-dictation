@@ -1,3 +1,4 @@
+import { completeStreamingCapture } from '../streaming-capture.js';
 import { supportLog } from '../support-logger.js';
 import { requestHostedTranscription } from '../product-api.js';
 import { randomUUID } from 'node:crypto';
@@ -6,6 +7,7 @@ import type { DictationService, ServiceCaptureInput, ServiceCaptureResult } from
 
 export class ProductDictationService implements DictationService {
   async processCapture(input: ServiceCaptureInput): Promise<ServiceCaptureResult> {
+    if (input.streaming) return completeStreamingCapture(input);
     const operationId = randomUUID();
     supportLog('capture.operation', { captureId: input.captureId, operationId });
     const result = await requestHostedTranscription({

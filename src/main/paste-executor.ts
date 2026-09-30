@@ -11,9 +11,6 @@ export interface PasteCommand {
   args: readonly string[];
 }
 
-const MACOS_PASTE_SCRIPT =
-  'tell application "System Events" to keystroke "v" using command down';
-
 // SendInput reports how many events were inserted. A lower-integrity process
 // cannot inject into an elevated target; in that case it returns fewer than all
 // four events and PowerShell exits non-zero. Never synthesize Enter.
@@ -106,6 +103,19 @@ Add-Type -TypeDefinition $source
 [SpeakeasyPasteInput]::Paste()
 `.trim();
 
+export class PasteFocusRecoveryError extends Error {
+  constructor() { super('The original editable field is unavailable or changed.'); this.name = 'PasteFocusRecoveryError'; }
+}
+
+/** A focus safety refusal should not force the user back through setup. */
+export const isPasteFocusRecovery = (error: unknown): boolean => {
+  for (let depth = 0; depth < 6 && error instanceof Error; depth++) {
+    if (error instanceof PasteFocusRecoveryError) return true;
+    error = 'cause' in error ? error.cause : undefined;
+  }
+  return false;
+};
+
 export class ClipboardOnlyPasteError extends Error {
   readonly clipboardWritten = true;
 
@@ -117,10 +127,7 @@ export class ClipboardOnlyPasteError extends Error {
 
 export const getPasteCommand = (platform: PastePlatform): PasteCommand => {
   if (platform === 'darwin') {
-    return {
-      command: 'osascript',
-      args: ['-e', MACOS_PASTE_SCRIPT]
-    };
+    throw new PasteFocusRecoveryError();
   }
 
   return {
@@ -140,18 +147,31 @@ export const pasteTextWithExecutor = async (
   text: string,
   clipboardWriter: ClipboardWriter,
   execute: PasteExecutor,
-  platform: PastePlatform = 'darwin'
+  platform: PastePlatform = 'darwin',
+  onTiming?: (phase: 'main.clipboard_write' | 'main.clipboard_verify' | 'main.paste_command', ms: number) => void,
+  nativePaste?: () => void | Promise<void>
 ): Promise<void> => {
   // Electron 44 writes asynchronously. Never send Command-V before completion,
   // or claim recovery while the clipboard still contains an older value.
-  await clipboardWriter.writeText(text);
-  if (clipboardWriter.readText && await clipboardWriter.readText() !== text) {
+  const timed = async <T>(phase: 'main.clipboard_write' | 'main.clipboard_verify' | 'main.paste_command', operation: () => T | Promise<T>) => {
+    const start = performance.now();
+    try { return await operation(); }
+    finally { try { onTiming?.(phase, performance.now() - start); } catch { /* diagnostics only */ } }
+  };
+  await timed('main.clipboard_write', () => clipboardWriter.writeText(text));
+  if (clipboardWriter.readText && await timed('main.clipboard_verify', () => clipboardWriter.readText!()) !== text) {
     throw new Error('The dictated text could not be verified on the clipboard.');
   }
 
-  const pasteCommand = getPasteCommand(platform);
   try {
-    await execute(pasteCommand.command, pasteCommand.args);
+    await timed('main.paste_command', () => {
+      if (platform === 'darwin') {
+        if (!nativePaste) throw new PasteFocusRecoveryError();
+        return nativePaste();
+      }
+      const pasteCommand = getPasteCommand(platform);
+      return execute(pasteCommand.command, pasteCommand.args);
+    });
   } catch (error) {
     throw new ClipboardOnlyPasteError(error);
   }

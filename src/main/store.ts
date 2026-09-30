@@ -55,6 +55,7 @@ export const getStore = (): Store<AppStoreSchema> => {
         groqApiKey: '',
         groqApiKeyEncrypted: '',
         polishBeforePaste: true,
+        dictationSounds: true,
         cleanupStrength: 'minimal',
         widgetForm: 'pill',
         widgetSize: DEFAULT_WIDGET_SIZE_ID,

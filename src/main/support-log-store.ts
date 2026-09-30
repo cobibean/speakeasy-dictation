@@ -46,6 +46,7 @@ export const sanitizeSupportDetails = (input: unknown): SupportDetails => {
   if (typeof source.route === 'string') result.route = ROUTES.has(source.route) ? source.route : source.route.startsWith('/v1/operations/') ? '/v1/operations/:id' : 'other';
   if (typeof source.clipboardWritten === 'boolean') result.clipboardWritten = source.clipboardWritten;
   if (typeof source.polish === 'boolean') result.polish = source.polish;
+  if (['cached', 'stored', 'refreshed', 'unknown'].includes(source.tokenOutcome as string)) result.tokenOutcome = source.tokenOutcome as string;
   if (typeof source.version === 'string' && /^\d+\.\d+\.\d+$/.test(source.version)) result.version = source.version;
   if (typeof source.networkCode === 'string' && ['ENOTFOUND', 'ECONNREFUSED', 'ETIMEDOUT', 'ECONNRESET', 'EAI_AGAIN', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_SOCKET'].includes(source.networkCode)) result.networkCode = source.networkCode;
   if (Array.isArray(source.frames)) {

@@ -7,6 +7,8 @@ import { SpeakeasyError, toErrorCode } from './errors.js';
 import { mapHostedError } from './hosted-product-errors.js';
 import { getStore } from './store.js';
 import { getProductAccessToken } from './product-auth.js';
+import { logLatencyMark } from './latency-log.js';
+import type { CaptureId } from '../shared/latency.js';
 import { getProductSecureStore } from './product-secure-storage.js';
 import {
   HostedProductClient,
@@ -70,12 +72,13 @@ const getHeaders = async (): Promise<HeadersInit> => {
   };
 };
 
-const createHostedClient = (): HostedProductClient => {
+const createHostedClient = (captureId?: CaptureId): HostedProductClient => {
   const config = getAppConfig();
   assertConfigured();
   return new HostedProductClient({
     baseUrl: config.productApiBaseUrl!,
     getAccessToken: getProductAccessToken,
+    onTiming: captureId ? (phase, durationMs, metadata) => logLatencyMark(captureId, phase, durationMs, metadata) : undefined,
     appVersion: app.getVersion(),
     osVersion: `${os.type()} ${os.release()}`,
     releaseChannel: config.releaseChannel,
@@ -254,13 +257,13 @@ export const retryHostedProductAccountDeletion = async (): Promise<ProductAccoun
 };
 
 export const requestHostedTranscription = async (
-  payload: ProductTranscriptionRequest
+  payload: ProductTranscriptionRequest & { captureId?: CaptureId }
 ): Promise<ProductTranscriptionResponse> => {
   try {
     if (!payload.operationId) {
       throw new Error('Hosted transcription requires a stable operation ID.');
     }
-    return await createHostedClient().transcribe({ ...payload, operationId: payload.operationId });
+    return await createHostedClient(payload.captureId).transcribe({ ...payload, operationId: payload.operationId });
   } catch (error) {
     throw mapHostedError(error, 'transcription-failed', 'Hosted transcription failed.');
   }

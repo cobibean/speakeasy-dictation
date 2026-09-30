@@ -53,48 +53,88 @@ const parseEntries = (serialized: string): HostedOperationOutboxEntry[] => {
 };
 
 export class HostedOperationOutbox {
+  private mutations: Promise<unknown> = Promise.resolve();
+  private generation = 0;
+  private acknowledgments: Promise<unknown> = Promise.resolve();
+  private activeDeliveries = new Set<string>();
   constructor(private readonly storage: HostedOperationOutboxStorage) {}
 
+  currentGeneration(): number { return this.generation; }
+  isCurrent(generation: number): boolean { return generation === this.generation; }
+
+  beginDelivery(operationId: string): () => void {
+    this.activeDeliveries.add(operationId);
+    return () => { this.activeDeliveries.delete(operationId); };
+  }
+
+  private mutate<T>(generation: number, operation: () => Promise<T>): Promise<T> {
+    const next = this.mutations.then(async () => {
+      if (!this.isCurrent(generation)) throw new Error('Operation ownership changed.');
+      return operation();
+    });
+    this.mutations = next.catch(() => undefined);
+    return next;
+  }
+
+  // Serialize remote acknowledgments, too: older usage snapshots must not
+  // overwrite newer ones. A network failure never poisons the queue.
+  enqueueAcknowledgment(generation: number, operation: () => Promise<void>): Promise<void> {
+    const next = this.acknowledgments.then(async () => {
+      if (this.isCurrent(generation)) await operation();
+    });
+    this.acknowledgments = next.catch(() => undefined);
+    return next;
+  }
+
   async list(): Promise<HostedOperationOutboxEntry[]> {
+    await this.mutations;
     return parseEntries(await this.storage.read());
   }
 
-  async rememberPending(operationId: string): Promise<void> {
+  async rememberPending(operationId: string, generation = this.generation): Promise<void> {
     if (!operationIdPattern.test(operationId)) {
       throw new Error('A valid operation ID is required.');
     }
-    const entries = await this.list();
-    if (entries.some((entry) => entry.operationId === operationId)) return;
-    await this.storage.write(JSON.stringify([...entries, { operationId, localResult: 'pending' }]));
+    return this.mutate(generation, async () => {
+      const entries = parseEntries(await this.storage.read());
+      if (entries.some((entry) => entry.operationId === operationId)) return;
+      await this.storage.write(JSON.stringify([...entries, { operationId, localResult: 'pending' }]));
+    });
   }
 
   async markAcknowledgment(
     operationId: string,
-    acknowledgment: ProductPasteAcknowledgment
+    acknowledgment: ProductPasteAcknowledgment,
+    generation = this.generation
   ): Promise<void> {
-    const entries = await this.list();
-    const next = entries.map((entry) =>
-      entry.operationId === operationId
-        ? { operationId, localResult: acknowledgment }
-        : entry
-    );
-    if (!next.some((entry) => entry.operationId === operationId)) {
-      next.push({ operationId, localResult: acknowledgment });
-    }
-    await this.storage.write(JSON.stringify(next));
+    return this.mutate(generation, async () => {
+      const entries = parseEntries(await this.storage.read());
+      const next = entries.map((entry) =>
+        entry.operationId === operationId
+          ? { operationId, localResult: acknowledgment }
+          : entry
+      );
+      if (!next.some((entry) => entry.operationId === operationId)) {
+        next.push({ operationId, localResult: acknowledgment });
+      }
+      await this.storage.write(JSON.stringify(next));
+    });
   }
 
-  async remove(operationId: string): Promise<void> {
-    const entries = (await this.list()).filter((entry) => entry.operationId !== operationId);
-    if (entries.length === 0) {
-      await this.storage.clear();
-    } else {
-      await this.storage.write(JSON.stringify(entries));
-    }
+  async remove(operationId: string, generation = this.generation): Promise<void> {
+    return this.mutate(generation, async () => {
+      const entries = parseEntries(await this.storage.read()).filter((entry) => entry.operationId !== operationId);
+      if (entries.length === 0) {
+        await this.storage.clear();
+      } else {
+        await this.storage.write(JSON.stringify(entries));
+      }
+    });
   }
 
   async clear(): Promise<void> {
-    await this.storage.clear();
+    const generation = ++this.generation;
+    await this.mutate(generation, () => this.storage.clear());
   }
 
   async reconcile(reconciler: HostedOperationReconciler): Promise<{
@@ -102,29 +142,37 @@ export class HostedOperationOutbox {
     retained: number;
     removed: number;
   }> {
+    const generation = this.generation;
     let acknowledged = 0;
     let removed = 0;
     for (const entry of await this.list()) {
       try {
-        const status = await reconciler.status(entry.operationId);
-        if (
-          status.operationStatus === 'committed' ||
-          status.operationStatus === 'released' ||
-          status.operationStatus === 'expired'
-        ) {
-          await this.remove(entry.operationId);
-          removed += 1;
-          continue;
-        }
-        if (status.operationStatus !== 'transcribed') continue;
+        if (!this.isCurrent(generation)) break;
+        await this.enqueueAcknowledgment(generation, async () => {
+          if (this.activeDeliveries.has(entry.operationId)) return;
+          const status = await reconciler.status(entry.operationId);
+          if (!this.isCurrent(generation) || this.activeDeliveries.has(entry.operationId)) return;
+          const current = (await this.list()).find(item => item.operationId === entry.operationId);
+          if (!current) return;
+          if (
+            status.operationStatus === 'committed' ||
+            status.operationStatus === 'released' ||
+            status.operationStatus === 'expired'
+          ) {
+            await this.remove(entry.operationId, generation);
+            removed += 1;
+            return;
+          }
+          if (status.operationStatus !== 'transcribed') return;
 
-        await reconciler.acknowledge(
-          entry.operationId,
-          entry.localResult === 'pending' ? 'discarded' : entry.localResult
-        );
-        acknowledged += 1;
-        await this.remove(entry.operationId);
-        removed += 1;
+          await reconciler.acknowledge(
+            entry.operationId,
+            current.localResult === 'pending' ? 'discarded' : current.localResult
+          );
+          acknowledged += 1;
+          await this.remove(entry.operationId, generation);
+          removed += 1;
+        });
       } catch {
         // Offline/auth/server failures retain the content-free record for retry.
       }

@@ -1,0 +1,147 @@
+// Node-API keeps this bridge independent of Electron's V8 ABI. All AX handles
+// stay in main; no field contents are read, retained, or sent to the renderer.
+#include <node_api.h>
+#include <ApplicationServices/ApplicationServices.h>
+#include <Carbon/Carbon.h>
+#include <stdlib.h>
+#include <stdbool.h>
+
+typedef struct {
+  AXUIElementRef app, window, field;
+  pid_t pid;
+  CFRange selection;
+  bool has_selection;
+} PasteTarget;
+
+static void release_target(PasteTarget *target) {
+  if (!target) return;
+  if (target->app) CFRelease(target->app);
+  if (target->window) CFRelease(target->window);
+  if (target->field) CFRelease(target->field);
+  free(target);
+}
+
+static void finalize_target(napi_env env, void *data, void *hint) {
+  (void)env; (void)hint;
+  release_target(data);
+}
+
+static AXUIElementRef copy_element(AXUIElementRef element, CFStringRef attribute) {
+  CFTypeRef value = NULL;
+  if (AXUIElementCopyAttributeValue(element, attribute, &value) != kAXErrorSuccess) return NULL;
+  if (!value || CFGetTypeID(value) != AXUIElementGetTypeID()) {
+    if (value) CFRelease(value);
+    return NULL;
+  }
+  return (AXUIElementRef)value;
+}
+
+static bool read_selection(AXUIElementRef field, CFRange *selection) {
+  CFTypeRef value = NULL;
+  bool valid = AXUIElementCopyAttributeValue(field, kAXSelectedTextRangeAttribute, &value) == kAXErrorSuccess
+    && value && CFGetTypeID(value) == AXValueGetTypeID()
+    && AXValueGetType((AXValueRef)value) == kAXValueCFRangeType
+    && AXValueGetValue((AXValueRef)value, kAXValueCFRangeType, selection);
+  if (value) CFRelease(value);
+  return valid;
+}
+
+static bool editable_field(AXUIElementRef field) {
+  CFTypeRef role = NULL, subrole = NULL;
+  bool supported = AXUIElementCopyAttributeValue(field, kAXRoleAttribute, &role) == kAXErrorSuccess
+    && role && (CFEqual(role, kAXTextAreaRole) || CFEqual(role, kAXTextFieldRole) || CFEqual(role, kAXComboBoxRole));
+  AXUIElementCopyAttributeValue(field, kAXSubroleAttribute, &subrole);
+  if (subrole && CFEqual(subrole, kAXSecureTextFieldSubrole)) supported = false;
+  if (role) CFRelease(role);
+  if (subrole) CFRelease(subrole);
+  Boolean settable = false;
+  return supported && AXUIElementIsAttributeSettable(field, kAXValueAttribute, &settable) == kAXErrorSuccess && settable;
+}
+
+static PasteTarget *capture_target(void) {
+  if (!AXIsProcessTrusted() || IsSecureEventInputEnabled()) return NULL;
+  PasteTarget *target = calloc(1, sizeof(PasteTarget));
+  if (!target) return NULL;
+  AXUIElementRef system = AXUIElementCreateSystemWide();
+  AXUIElementSetMessagingTimeout(system, 0.15f);
+  target->app = copy_element(system, kAXFocusedApplicationAttribute);
+  CFRelease(system);
+  if (!target->app) goto invalid;
+  AXUIElementSetMessagingTimeout(target->app, 0.15f);
+  if (AXUIElementGetPid(target->app, &target->pid) != kAXErrorSuccess || target->pid <= 0) goto invalid;
+  target->window = copy_element(target->app, kAXFocusedWindowAttribute);
+  target->field = copy_element(target->app, kAXFocusedUIElementAttribute);
+  if (!target->window || !target->field || !editable_field(target->field)) goto invalid;
+  target->has_selection = read_selection(target->field, &target->selection);
+  return target;
+invalid:
+  release_target(target);
+  return NULL;
+}
+
+static napi_value capture(napi_env env, napi_callback_info info) {
+  (void)info;
+  napi_value result;
+  PasteTarget *target = capture_target();
+  if (!target) { napi_get_null(env, &result); return result; }
+  if (napi_create_external(env, target, finalize_target, NULL, &result) != napi_ok) {
+    release_target(target);
+    napi_throw_error(env, NULL, "Unable to retain paste target.");
+    return NULL;
+  }
+  return result;
+}
+
+static napi_value paste(napi_env env, napi_callback_info info) {
+  napi_value argument, result;
+  size_t count = 1;
+  PasteTarget *target = NULL;
+  bool delivered = false;
+  napi_get_cb_info(env, info, &count, &argument, NULL, NULL);
+  if (count != 1 || napi_get_value_external(env, argument, (void **)&target) != napi_ok || !target) goto done;
+  PasteTarget *current = capture_target();
+  if (!current) goto done;
+  bool matches = current->pid == target->pid && CFEqual(current->app, target->app)
+    && CFEqual(current->window, target->window) && CFEqual(current->field, target->field)
+    && (!target->has_selection || (current->has_selection
+      && current->selection.location == target->selection.location
+      && current->selection.length == target->selection.length));
+  release_target(current);
+  CGEventFlags modifiers = CGEventSourceFlagsState(kCGEventSourceStateHIDSystemState)
+    & (kCGEventFlagMaskCommand | kCGEventFlagMaskShift | kCGEventFlagMaskControl | kCGEventFlagMaskAlternate | kCGEventFlagMaskSecondaryFn);
+  if (!matches || modifiers) goto done;
+  CGEventSourceRef source = CGEventSourceCreate(kCGEventSourceStatePrivate);
+  if (!source) goto done;
+  CGEventRef events[4] = {
+    CGEventCreateKeyboardEvent(source, 55, true),
+    CGEventCreateKeyboardEvent(source, 9, true),
+    CGEventCreateKeyboardEvent(source, 9, false),
+    CGEventCreateKeyboardEvent(source, 55, false)
+  };
+  CFRelease(source);
+  bool allocated = events[0] && events[1] && events[2] && events[3];
+  if (allocated) {
+    // Address only the original process; never activate it or post to the new
+    // foreground app if focus changes in the gap after AX validation.
+    for (int i = 0; i < 4; i++) {
+      CGEventSetFlags(events[i], i == 3 ? 0 : kCGEventFlagMaskCommand);
+      CGEventPostToPid(target->pid, events[i]);
+    }
+    delivered = true;
+  }
+  for (int i = 0; i < 4; i++) if (events[i]) CFRelease(events[i]);
+done:
+  // This reports event submission only. Workflow acceptance proves insertion.
+  napi_get_boolean(env, delivered, &result);
+  return result;
+}
+
+static napi_value initialize(napi_env env, napi_value exports) {
+  napi_property_descriptor methods[] = {
+    {"capture", NULL, capture, NULL, NULL, NULL, napi_default, NULL},
+    {"paste", NULL, paste, NULL, NULL, NULL, napi_default, NULL}
+  };
+  napi_define_properties(env, exports, 2, methods);
+  return exports;
+}
+NAPI_MODULE(NODE_GYP_MODULE_NAME, initialize)

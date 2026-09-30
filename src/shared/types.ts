@@ -168,6 +168,7 @@ export interface WidgetPosition {
 }
 
 export interface AudioCapturePayload {
+  streaming?: boolean;
   audioBuffer: ArrayBuffer;
   mimeType: string;
   durationMs: number;
@@ -178,6 +179,7 @@ export interface AudioCapturePayload {
 export interface SpeakeasySettings {
   groqApiKey: string;
   polishBeforePaste: boolean;
+  dictationSounds: boolean;
   hotkey: string;
   cleanupStrength: CleanupStrength;
   widgetForm: WidgetForm;
@@ -200,6 +202,7 @@ export interface SpeakeasySettings {
 export const ALLOWED_SETTINGS_KEYS = [
   'groqApiKey',
   'polishBeforePaste',
+  'dictationSounds',
   'hotkey',
   'cleanupStrength',
   'widgetForm',
@@ -233,6 +236,7 @@ export const isValidSettingValue = (key: AllowedSettingKey, value: unknown): boo
     case 'hotkey':
       return isHotkeyId(value);
     case 'showWidgetOverFullScreenApps':
+    case 'dictationSounds':
     case 'polishBeforePaste':
       return typeof value === 'boolean';
     case 'cleanupStrength':
@@ -326,10 +330,13 @@ export type SettingsCategory = 'dictation' | 'appearance' | 'account' | 'help';
 export interface SpeakeasyAPI {
   /** Present only on the in-memory, no-preload staging design review bridge. */
   designReview?: true;
-  onRecordingStart: (callback: () => void) => () => void;
+  onRecordingStart: (callback: (captureId?: string) => void) => () => void;
   onRecordingStop: (callback: () => void) => () => void;
   onRecordingRecovery: (callback: (reason: string) => void) => () => void;
   onStatusUpdate: (callback: (status: OverlayStatus) => void) => () => void;
+  beginStreamingCapture: (captureId: string) => Promise<boolean>;
+  appendStreamingCapture: (captureId: string, chunk: ArrayBuffer) => Promise<boolean>;
+  cancelStreamingCapture: (captureId: string) => void;
   processAudioCapture: (payload: AudioCapturePayload) => Promise<void>;
   getMicrophoneStatus: () => Promise<string>;
   requestMicrophoneAccess: () => Promise<boolean>;

@@ -470,18 +470,26 @@ const refreshSession = (session: StoredProductSession): Promise<StoredProductSes
         }
   );
 
-export const getProductAccessToken = async (): Promise<string> => {
+export const getProductAccessToken = async (
+  reportOutcome?: (outcome: 'cached' | 'stored' | 'refreshed') => void
+): Promise<string> => {
+  const cached = !!hostedSession;
+  const report = (outcome: 'cached' | 'stored' | 'refreshed') => {
+    try { reportOutcome?.(outcome); } catch { /* Diagnostics never affect authentication. */ }
+  };
   const session = await readActiveSession();
   if (!session) {
     throw new SpeakeasyError('auth-required', 'Sign in is required before using the product edition.');
   }
 
   if (session.expiresAt > Date.now() / 1000 + 60) {
+    report(cached ? 'cached' : 'stored');
     return session.accessToken;
   }
 
   try {
     const nextSession = await refreshSession(session);
+    report('refreshed');
     return nextSession.accessToken;
   } catch (error) {
     throw new SpeakeasyError(toErrorCode(error, 'auth-failed'), 'Your session expired. Sign in again.', error);

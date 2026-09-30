@@ -31,6 +31,8 @@ interface HudSettingsFormProps {
   productAuthEmail: string;
   showApiKey: boolean;
   hasApiKey: boolean;
+  dictationSounds: boolean;
+  onDictationSoundsChange: (enabled: boolean) => Promise<void>;
   polishBeforePaste: boolean;
   cleanupStrength: CleanupStrength;
   hotkey: string;
@@ -75,6 +77,8 @@ const HudSettingsForm = ({
   productAuthEmail,
   showApiKey,
   hasApiKey,
+  dictationSounds,
+  onDictationSoundsChange,
   polishBeforePaste,
   cleanupStrength,
   hotkey,
@@ -120,6 +124,7 @@ const HudSettingsForm = ({
     if (categoryRequest) setCategory(categoryRequest.category);
   }, [categoryRequest]);
   useEffect(() => { paneRef.current?.scrollTo({ top: 0 }); }, [category]);
+  const [soundsBusy, setSoundsBusy] = useState(false);
   const [fullScreenBusy, setFullScreenBusy] = useState(false);
   const [saveError, setSaveError] = useState('');
   const runImmediateChange = async (action: () => void | Promise<void>) => {
@@ -565,6 +570,23 @@ const HudSettingsForm = ({
               checked={polishBeforePaste}
               onChange={(event) => onPolishBeforePasteChange(event.target.checked)}
             />
+            <span className="hud-switch-thumb" />
+          </span>
+        </label>
+
+        <label className="hud-toggle-row no-drag">
+          <div>
+            <div className="hud-control-title">Dictation sounds</div>
+            <div className="hud-control-caption hud-body-copy" id="dictation-sounds-description">Hear when listening starts and stops. Saved immediately.</div>
+          </div>
+          <span className={`hud-switch ${dictationSounds ? 'is-on' : ''}`}>
+            <input type="checkbox" aria-label="Dictation sounds" aria-describedby="dictation-sounds-description"
+              checked={dictationSounds} disabled={soundsBusy}
+              onChange={event => {
+                const enabled = event.target.checked;
+                setSoundsBusy(true);
+                void runImmediateChange(() => onDictationSoundsChange(enabled)).finally(() => setSoundsBusy(false));
+              }} />
             <span className="hud-switch-thumb" />
           </span>
         </label>

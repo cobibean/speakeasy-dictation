@@ -54,12 +54,14 @@ export class HostedProductHttpError extends Error {
 
 export interface HostedProductClientOptions {
   baseUrl: string;
-  getAccessToken: () => Promise<string>;
+  getAccessToken: (reportOutcome?: (outcome: 'cached' | 'stored' | 'refreshed') => void) => Promise<string>;
   appVersion: string;
   osVersion: string;
   releaseChannel: string;
   fetchImpl?: typeof fetch;
   onRequest?: (details: { route: string; durationMs: number; status?: number; operationId?: string; error?: unknown }) => void;
+  onTiming?: (phase: 'main.http.token' | 'main.http.headers' | 'main.http.body', durationMs: number,
+    metadata?: { tokenOutcome: 'cached' | 'stored' | 'refreshed' | 'unknown' }) => void;
 }
 
 type VersionedResponse = { contractVersion?: unknown; operationId?: unknown };
@@ -108,6 +110,12 @@ export class HostedProductClient {
 
   constructor(private readonly options: HostedProductClientOptions) {
     this.fetchImpl = options.fetchImpl ?? fetch;
+  }
+
+  private timing(phase: 'main.http.token' | 'main.http.headers' | 'main.http.body', started: number,
+    metadata?: { tokenOutcome: 'cached' | 'stored' | 'refreshed' | 'unknown' }): void {
+    try { this.options.onTiming?.(phase, performance.now() - started, metadata); }
+    catch { /* Observability must not alter requests. */ }
   }
 
   async bootstrap(deviceId: string): Promise<ProductSessionBootstrapResponse> {
@@ -232,7 +240,10 @@ export class HostedProductClient {
       },
       body: formData
     }, TRANSCRIBE_TIMEOUT_MS);
-    const result = (await response.json()) as ProductTranscriptionResponse;
+    const bodyStarted = performance.now();
+    let result: ProductTranscriptionResponse;
+    try { result = (await response.json()) as ProductTranscriptionResponse; }
+    finally { this.timing('main.http.body', bodyStarted); }
     assertContract(result, payload.operationId);
     const parsedServerTiming = parseServerTimingHeader(
       selectServerTimingHeader(response.headers)
@@ -294,8 +305,14 @@ export class HostedProductClient {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const accessToken = await this.options.getAccessToken();
-      const response = await this.fetchImpl(`${this.options.baseUrl}${path}`, {
+      const tokenStarted = performance.now();
+      let tokenOutcome: 'cached' | 'stored' | 'refreshed' | 'unknown' = 'unknown';
+      let accessToken: string;
+      try { accessToken = await this.options.getAccessToken(outcome => { tokenOutcome = outcome; }); }
+      finally { this.timing('main.http.token', tokenStarted, { tokenOutcome }); }
+      const fetchStarted = performance.now();
+      let response: Response;
+      try { response = await this.fetchImpl(`${this.options.baseUrl}${path}`, {
         ...init,
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -303,7 +320,7 @@ export class HostedProductClient {
           ...init.headers
         },
         signal: controller.signal
-      });
+      }); } finally { this.timing('main.http.headers', fetchStarted); }
       status = response.status;
       if (!response.ok) throw await readError(response);
       return response;
