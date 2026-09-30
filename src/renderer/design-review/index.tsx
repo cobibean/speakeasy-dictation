@@ -50,7 +50,7 @@ if (query.get('fallback') === '1') state.diagnostics.lastCleanupOutcome = 'timeo
 const size = query.get('size');
 const opacity = Number(query.get('opacity') ?? 90);
 let settings: SpeakeasySettings = {
-  groqApiKey: '', productAuthEmail: 'alex@example.com', polishBeforePaste: true,
+  dictationSounds: true, groqApiKey: '', productAuthEmail: 'alex@example.com', polishBeforePaste: true,
   cleanupStrength: 'minimal', hotkey: 'right-option', widgetForm: 'pill',
   widgetSize: isWidgetSizeId(size) ? size : 'small', widgetTheme: normalizeWidgetThemeId(query.get('theme')),
   showWidgetOverFullScreenApps: true,

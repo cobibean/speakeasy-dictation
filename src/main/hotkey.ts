@@ -1,3 +1,5 @@
+import { createCaptureId } from '../shared/latency.js';
+import { rememberMacPasteTarget } from './native-macos-paste.js';
 import { globalShortcut, systemPreferences } from 'electron';
 import { uIOhook, UiohookKey } from 'uiohook-napi';
 import { getOverlayWindow, sendOverlayStatus, showOverlayWindow } from './overlay.js';
@@ -28,6 +30,7 @@ export type HotkeyCaptureTarget =
   | 'verification'
   | 'inactive';
 let captureTarget: HotkeyCaptureTarget = 'overlay';
+export const getHotkeyCaptureTarget = (): HotkeyCaptureTarget => captureTarget;
 let onVerificationComplete: () => void = () => undefined;
 
 /** Currently bound hotkey id (one of HOTKEY_OPTIONS). */
@@ -60,6 +63,8 @@ const startRecording = (): void => {
     getOnboardingWindow()?.webContents.send(IPC_CHANNELS.ONBOARDING_HOTKEY_DOWN);
     return;
   }
+  const captureId = createCaptureId();
+  if (captureTarget === 'overlay' && process.platform === 'darwin') rememberMacPasteTarget(captureId);
   if (captureTarget === 'overlay') {
     showOverlayWindow();
     sendOverlayStatus('listening');
@@ -69,7 +74,7 @@ const startRecording = (): void => {
     ? getOverlayWindow()
     : getOnboardingWindow();
   if (target && !target.isDestroyed()) {
-    target.webContents.send(IPC_CHANNELS.RECORDING_START);
+    target.webContents.send(IPC_CHANNELS.RECORDING_START, captureId);
   }
 };
 

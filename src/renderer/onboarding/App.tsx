@@ -1,3 +1,4 @@
+import { createRecordingFeedback, prepareRecordingSounds, playRecordingCue } from '../recording-feedback';
 import { WORKFLOW_PRESETS, getWorkflowPreset } from '../../shared/workflow-presets';
 import { cleanupFallbackMessage, type CleanupOutcome } from '../../shared/cleanup-outcome';
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react';
@@ -234,6 +235,11 @@ const App = (): JSX.Element => {
   const helpCloseButtonRef = useRef<HTMLButtonElement | null>(null);
   const helpPanelRef = useRef<HTMLElement | null>(null);
   const practiceFieldRef = useRef<HTMLTextAreaElement | null>(null);
+  const soundsEnabledRef = useRef(true);
+  useEffect(() => {
+    void window.speakeasy?.getSettings().then(settings => { soundsEnabledRef.current = settings.dictationSounds !== false; });
+    return window.speakeasy?.onSettingsChanged(settings => { soundsEnabledRef.current = settings.dictationSounds !== false; });
+  }, []);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -516,6 +522,7 @@ const App = (): JSX.Element => {
         PREVIEW_STEP !== null
       ));
     }
+    if (soundsEnabledRef.current) prepareRecordingSounds();
     releaseRequestedRef.current = false;
     setError('');
     showStatus('Opening your microphone…', 'progress', platformSteps.nativePasteProof);
@@ -539,6 +546,9 @@ const App = (): JSX.Element => {
       recorder.ondataavailable = (event) => {
         if (event.data.size) chunksRef.current.push(event.data);
       };
+      let interrupted = false;
+      const feedback = createRecordingFeedback(playRecordingCue, () => soundsEnabledRef.current);
+      recorder.onstart = () => { if (recorder.state === 'recording') feedback.started(); };
       recorder.onstop = () => {
         if (deadlineRef.current !== null) window.clearTimeout(deadlineRef.current);
         deadlineRef.current = null;
@@ -549,12 +559,19 @@ const App = (): JSX.Element => {
         recorderRef.current = null;
         streamRef.current = null;
         stream.getTracks().forEach((track) => track.stop());
+        if (interrupted) { feedback.cancel(); return; }
+        feedback.stopped();
         void processPracticeBlob(blob, durationMs);
       };
-      recorder.onerror = () => {
+      const interrupt = () => {
+        interrupted = true;
+        feedback.cancel();
         setStatus('microphone-unavailable');
         setError('The microphone stopped responding. Reconnect it and try again.');
+        if (recorder.state !== 'inactive') stopRecorderWithFinalData(recorder);
       };
+      recorder.onerror = interrupt;
+      stream.getAudioTracks().forEach(track => track.addEventListener('ended', interrupt, { once: true }));
       recorder.start(RECORDER_TIMESLICE_MS);
       setStatus('listening');
       showStatus(`Listening while ${hotkeyLabel} is held…`, 'progress', platformSteps.nativePasteProof);

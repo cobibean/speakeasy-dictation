@@ -24,6 +24,20 @@ export interface RuntimeConfigEnvironment {
   SPEAKEASY_RELEASE_CHANNEL?: string;
 }
 
+/** Streaming uses the canonical service for the baked Mac Product environment. */
+export const selectStreamingUrl = (config: RuntimeProductConfig, argv: readonly string[]): string | null => {
+  if (config.edition !== 'product' || argv.includes('--dictation-provider=groq')) return null;
+  if (config.buildProfile === 'mac-staging' && config.productEnvironment === 'staging'
+    && config.productApiBaseUrl === 'https://api-staging.speakeasywords.com') {
+    return 'wss://api-staging.speakeasywords.com/v1/stream';
+  }
+  if (config.buildProfile === 'mac-product' && config.productEnvironment === 'production'
+    && config.releaseChannel === 'stable' && config.productApiBaseUrl === 'https://api.speakeasywords.com') {
+    return 'wss://api.speakeasywords.com/v1/stream';
+  }
+  return null;
+};
+
 export const isWindowsHostedProfile = (
   productConfig: RuntimeProductConfig
 ): boolean =>

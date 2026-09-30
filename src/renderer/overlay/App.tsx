@@ -1,3 +1,5 @@
+import { createStreamingPcm, type StreamingPcmCapture } from './streaming-pcm';
+import { createRecordingFeedback, prepareRecordingSounds, playRecordingCue } from '../recording-feedback';
 import type { SettingsCategory } from '../../shared/types';
 import { applyAppTheme } from '../ui/app-theme';
 import { cleanupFallbackMessage } from '../../shared/cleanup-outcome';
@@ -125,6 +127,7 @@ const App = (): JSX.Element => {
   const [apiKey, setApiKey] = useState('');
   const [productAuthEmail, setProductAuthEmail] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
+  const [dictationSounds, setDictationSounds] = useState(true);
   const [polishBeforePaste, setPolishBeforePaste] = useState(true);
   const [cleanupStrength, setCleanupStrength] = useState<CleanupStrength>('minimal');
   const [hotkey, setHotkey] = useState(DEFAULT_HOTKEY_ID);
@@ -142,6 +145,7 @@ const App = (): JSX.Element => {
   const [initialPolishBeforePaste, setInitialPolishBeforePaste] = useState(true);
   const [initialCleanupStrength, setInitialCleanupStrength] = useState<CleanupStrength>('minimal');
   const [initialWidgetOpacity, setInitialWidgetOpacity] = useState(90);
+  const streamingPcmRef = useRef<StreamingPcmCapture | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
@@ -200,6 +204,7 @@ const App = (): JSX.Element => {
 
   const resetCapture = (mediaStream: MediaStream | null) => {
     clearCaptureDeadline();
+    streamingPcmRef.current?.cancel(); streamingPcmRef.current = null;
     stopTracks(mediaStream);
     streamRef.current = null;
     setStream(null);
@@ -219,6 +224,7 @@ const App = (): JSX.Element => {
     setCleanupStrength(value => reconcileSettingDraft(value, previous?.cleanupStrength, settings.cleanupStrength));
     setInitialCleanupStrength(settings.cleanupStrength);
     setShowWidgetOverFullScreenApps(settings.showWidgetOverFullScreenApps ?? true);
+    setDictationSounds(settings.dictationSounds ?? true);
     setHotkey(settings.hotkey);
     setWidgetForm(settings.widgetForm);
     setWidgetSize(settings.widgetSize ?? DEFAULT_WIDGET_SIZE_ID);
@@ -278,7 +284,7 @@ const App = (): JSX.Element => {
     }
   };
 
-  const startCapture = async () => {
+  const startCapture = async (mainCaptureId?: string) => {
     const captureToken = captureGateRef.current.requestStart();
     if (captureToken === null) {
       window.speakeasy?.debugLog(
@@ -286,11 +292,14 @@ const App = (): JSX.Element => {
       );
       return;
     }
+    if (lastSettingsRef.current?.dictationSounds !== false) prepareRecordingSounds();
     captureRequestedAtRef.current = performance.now();
-    captureIdRef.current = createCaptureId();
+    const currentCaptureId = mainCaptureId ?? createCaptureId();
+    captureIdRef.current = currentCaptureId;
     window.speakeasy?.logCaptureEvent('requested', captureIdRef.current);
     latencyMarksRef.current = [];
 
+    let pendingStream: MediaStream | null = null;
     try {
       const wasCircleBeforeCapture = widgetForm === 'circle';
       wasCircleBeforeCaptureRef.current = wasCircleBeforeCapture;
@@ -304,8 +313,16 @@ const App = (): JSX.Element => {
       const nextStream = await navigator.mediaDevices.getUserMedia({
         audio: true
       });
+      pendingStream = nextStream;
       void window.speakeasy?.reportMicrophoneStatus('granted');
 
+      if (!captureGateRef.current.isStarting(captureToken)) { stopTracks(nextStream); return; }
+      streamRef.current = nextStream;
+      const streamingPcm = await createStreamingPcm(nextStream, currentCaptureId, () => {
+        if (captureIdRef.current === currentCaptureId && captureGateRef.current.getState() === 'recording') stopCapture();
+      });
+      if (!captureGateRef.current.isStarting(captureToken)) { streamingPcm?.cancel(); stopTracks(nextStream); return; }
+      streamingPcmRef.current = streamingPcm;
       const preferredMimeType = getPreferredMimeType();
       const recorder = preferredMimeType
         ? new MediaRecorder(nextStream, { mimeType: preferredMimeType })
@@ -313,6 +330,7 @@ const App = (): JSX.Element => {
 
       if (!captureGateRef.current.markRecording(captureToken)) {
         window.speakeasy?.debugLog('Capture start canceled before media became ready');
+        streamingPcm?.cancel(); streamingPcmRef.current = null;
         stopTracks(nextStream);
         return;
       }
@@ -333,8 +351,14 @@ const App = (): JSX.Element => {
         }
       };
 
+      const feedback = createRecordingFeedback(playRecordingCue, () => lastSettingsRef.current?.dictationSounds !== false);
+      recorder.onstart = () => { if (recorder.state === 'recording') feedback.started(); };
       recorder.onstop = async () => {
         clearCaptureDeadline();
+        let streamError: unknown;
+        if (captureInterruptedRef.current) streamingPcm?.cancel();
+        else { try { await streamingPcm?.finish(); } catch (error) { streamError = error; streamingPcm?.cancel(); } }
+        streamingPcmRef.current = null;
         const onStopAtMs = performance.now();
         if (captureReleasedAtRef.current !== null) {
           latencyMarksRef.current.push(
@@ -359,6 +383,8 @@ const App = (): JSX.Element => {
         window.speakeasy?.logCaptureEvent('stopped', captureIdRef.current);
         chunksRef.current = [];
         resetCapture(nextStream);
+        if (captureInterruptedRef.current) feedback.cancel();
+        else feedback.stopped();
 
         if (captureInterruptedRef.current) {
           const recoveryStatus = captureInterruptedRef.current;
@@ -402,6 +428,7 @@ const App = (): JSX.Element => {
 
         let completedSuccessfully = false;
         try {
+          if (streamError) throw streamError;
           const arrayBufferStartedAtMs = performance.now();
           const audioBuffer = await audioBlob.arrayBuffer();
           latencyMarksRef.current.push(
@@ -412,6 +439,7 @@ const App = (): JSX.Element => {
 
           const captureId = captureIdRef.current ?? createCaptureId();
           await window.speakeasy.processAudioCapture({
+            streaming: !!streamingPcm,
             audioBuffer,
             mimeType,
             durationMs,
@@ -486,9 +514,11 @@ const App = (): JSX.Element => {
       );
     } catch (error) {
       if (!captureGateRef.current.fail(captureToken)) {
+        stopTracks(pendingStream);
         window.speakeasy?.debugLog('Ignored stale capture-start failure');
         return;
       }
+      resetCapture(pendingStream);
       window.speakeasy?.logCaptureEvent('failed', captureIdRef.current, error instanceof DOMException && error.name === 'NotAllowedError' ? 'microphone-denied' : 'microphone-unavailable');
       console.error('Failed to start audio capture:', error);
       window.speakeasy?.debugLog(
@@ -645,8 +675,8 @@ const App = (): JSX.Element => {
       })
     ]);
 
-    const unsubStart = window.speakeasy.onRecordingStart(() => {
-      void startCapture();
+    const unsubStart = window.speakeasy.onRecordingStart((captureId) => {
+      void startCapture(captureId);
     });
 
     const unsubStop = window.speakeasy.onRecordingStop(() => {
@@ -831,6 +861,8 @@ const App = (): JSX.Element => {
               productAuthEmail={productAuthEmail}
               showApiKey={showApiKey}
               hasApiKey={hasApiKey}
+              dictationSounds={dictationSounds}
+              onDictationSoundsChange={async enabled => { await window.speakeasy?.setSettings('dictationSounds', enabled); }}
               polishBeforePaste={polishBeforePaste}
               cleanupStrength={cleanupStrength}
               hotkey={hotkey}

@@ -18,6 +18,7 @@ export interface Polisher {
 }
 
 export interface ServiceCaptureInput extends TranscriptionInput {
+  streaming?: boolean;
   captureId: CaptureId;
   durationMs: number;
   polishBeforePaste: boolean;

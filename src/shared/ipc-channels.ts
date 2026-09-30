@@ -36,6 +36,9 @@ export const IPC_CHANNELS = {
 
   // Capture and processing
   CAPTURE_PROCESS: 'capture:process',
+  STREAM_BEGIN: 'capture:stream-begin',
+  STREAM_APPEND: 'capture:stream-append',
+  STREAM_CANCEL: 'capture:stream-cancel',
   PERMISSIONS_MICROPHONE_STATUS: 'permissions:microphone-status',
   PERMISSIONS_MICROPHONE_REQUEST: 'permissions:microphone-request',
   PERMISSIONS_MICROPHONE_REPORT: 'permissions:microphone-report',

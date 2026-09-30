@@ -84,6 +84,31 @@ export const shouldInterruptRecordingForCaptureTargetChange = (
   nextTarget: string
 ): boolean => isRecording && currentTarget !== nextTarget;
 
+// Account/focus refreshes must not take routing away from the setup screen
+// while it verifies a key or runs Practice. Lifecycle/permission failures
+// still invalidate that ownership immediately.
+export const shouldPreserveOnboardingCaptureTarget = ({
+  currentTarget,
+  onboardingVisible,
+  setupReason,
+  microphoneReady,
+  accessibilityReady
+}: {
+  currentTarget: string;
+  onboardingVisible: boolean;
+  setupReason: string;
+  microphoneReady: boolean;
+  accessibilityReady: boolean;
+}): boolean => {
+  if (!onboardingVisible || !accessibilityReady) return false;
+  if (currentTarget === 'verification') {
+    return ['hotkey-verification-required', 'practice-required',
+      'ready-confirmation-required', 'setup-complete'].includes(setupReason);
+  }
+  return currentTarget === 'onboarding-practice' && microphoneReady &&
+    ['practice-required', 'ready-confirmation-required', 'setup-complete'].includes(setupReason);
+};
+
 export const recoverHeldState = (
   holdState: Pick<HoldKeyState, 'reset'>,
   onInterrupted: () => void,

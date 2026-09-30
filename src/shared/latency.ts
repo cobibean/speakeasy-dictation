@@ -8,17 +8,28 @@ export interface LatencyMetadata {
   cleanupStrength?: CleanupStrengthMetadata;
   transcriptChars?: number;
   mimeType?: string;
+  tokenOutcome?: 'cached' | 'stored' | 'refreshed' | 'unknown';
 }
 
 export const BACKEND_LATENCY_PHASES = [
   'backend.auth.total',
+  'backend.auth.claims',
+  'backend.auth.session',
+  'backend.consent.total',
+  'backend.rate_limit.total',
+  'backend.provider_start.total',
   'backend.quota.precheck',
   'backend.usage.reserve',
   'backend.body.parse',
+  'backend.body.read',
+  'backend.body.decode',
   'backend.stt.total',
   'backend.polish.total',
+  'backend.polish.provider',
   'backend.usage.commit',
   'backend.usage.transcribed',
+  'backend.usage.mark',
+  'backend.usage.snapshot',
   'backend.device.touch',
   'backend.response.total'
 ] as const;
@@ -36,9 +47,19 @@ export const LATENCY_PHASES = [
   'main.ipc_handler',
   'main.pipeline_total',
   'main.service_total',
+  'main.http.token',
+  'main.http.headers',
+  'main.http.body',
   'main.stt_total',
   'main.polish_total',
   'main.paste_total',
+  'main.outbox_pending',
+  'main.paste_call',
+  'main.clipboard_write',
+  'main.clipboard_verify',
+  'main.paste_command',
+  'main.outbox_persist',
+  'main.acknowledge',
   ...BACKEND_LATENCY_PHASES
 ] as const;
 
@@ -117,6 +138,9 @@ export const sanitizeLatencyMetadata = (metadata: unknown): LatencyMetadata | un
         if (isSafeMimeType(value)) {
           safeMetadata[key] = value;
         }
+        break;
+      case 'tokenOutcome':
+        if (value === 'cached' || value === 'stored' || value === 'refreshed' || value === 'unknown') safeMetadata.tokenOutcome = value;
         break;
       default:
         break;

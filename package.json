@@ -1,7 +1,7 @@
 {
   "name": "speakeasy",
   "productName": "Speakeasy",
-  "version": "0.1.40",
+  "version": "0.1.42",
   "description": "Hold-to-talk dictation that transcribes, optionally polishes, and pastes at your cursor.",
   "main": "dist/main/main/index.js",
   "type": "module",
@@ -55,6 +55,6 @@
     "typecheck:renderer": "tsc --noEmit",
     "typecheck": "npm run typecheck:main && npm run typecheck:renderer",
     "build:renderer": "npm run typecheck:renderer && vite build",
-    "build:main": "tsc -p tsconfig.main.json && node scripts/generate-product-public-config.mjs"
+    "build:main": "tsc -p tsconfig.main.json && node scripts/build-macos-paste.mjs && node scripts/generate-product-public-config.mjs"
   }
 }
