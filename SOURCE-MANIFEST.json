@@ -12,7 +12,7 @@
     "package-lock.json": "63876ee9ccb2e6f2389f18b48fc17090ad94d241344f1fcc4cf3b632e20117b0",
     "package.json": "b21e5078e728034c02af9ca6437ec3d4177dc393a8cea6205b203b230a1e1175",
     "postcss.config.cjs": "c3275e0c1ab2639ab056915eac2a806b997a7879c31edce8898ec443a4823a06",
-    "README.md": "a4afad4e5e20a30a0d6571acaf1033e00361e34dc6b4d9f7271e88be35611be7",
+    "README.md": "1f161776367580f4594112f73acbf6de2a57b6918bf3e07eb7d9f85b7c122acd",
     "scripts/build-environment.mjs": "0729977338354e74c1dface0b17eab433483e3fbe1a0db22d63b3a22a731313a",
     "scripts/build-macos-paste.mjs": "64dec474368948e9db81f6b5f2737e5f4f75ced75141fb2dd670920e9d15d1a8",
     "scripts/dev-electron-watch.mjs": "1332bdb746a801dcf7c902ad5ef45a12bafc032729586f6360a64bb2ebd3cb3c",

@@ -59,14 +59,14 @@ separate future deliverable.
 | Cost | Free tier (5 dictations/week + unlimited Practice), Standard $5/mo, Pro $9/mo | Free software; you pay Groq directly for usage |
 | Sign-in | Email sign-in | None |
 | Updates | Update and restart | Rebuild from source |
-| Data path | Audio goes via the speakeasy. API to Groq | Audio goes straight from your Mac to your Groq account |
+| Data path | Audio goes via the speakeasy. API to Deepgram for streaming; Groq handles non-streaming transcription and optional Polish | Audio goes straight from your Mac to your Groq account |
 | Support | [speakeasywords.com/support](https://speakeasywords.com/support) | GitHub issues |
 
 ## How it works
 
 - Hold **Right Option** (configurable), speak, release. speakeasy. transcribes
   with Groq Whisper Large v3 Turbo and types the result into the active text
-  field. Internet is required; recordings are up to 5 minutes; English.
+  field in this source-built BYOK edition. Hosted streaming uses Deepgram instead. Internet is required; recordings are up to 5 minutes; English.
 - Optional **Polish** (minimal / balanced / strong) uses GPT-OSS 120B to remove
   filler and fix punctuation. If Polish fails, you get the raw transcript.
 - If automatic paste isn't safe in the target field, the text stays on your
