@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { PASTE_REFUSAL_REASONS } from '../shared/paste-recovery.js';
 import { LATENCY_PHASES } from '../shared/latency.js';
 import { sanitizeServerTimingSnapshot } from '../shared/server-timing.js';
 import { cleanupUsedOriginal, parseCleanupOutcome } from '../shared/cleanup-outcome.js';
@@ -8,7 +9,7 @@ import { cleanupUsedOriginal, parseCleanupOutcome } from '../shared/cleanup-outc
 const EVENTS = ['app.started', 'app.stopped', 'runtime.failed', 'capture.started', 'capture.failed', 'capture.completed', 'capture.empty', 'capture.discarded', 'capture.operation', 'capture.stage', 'capture.cleanup', 'latency', 'http.completed', 'http.failed', 'state.error', 'bundle.exported'] as const;
 export type SupportEventName = typeof EVENTS[number];
 const CODES = new Set('none missing-api-key auth-required auth-failed consent-required activation-required offline microphone-denied microphone-unavailable accessibility-required hotkey-unavailable transcription-failed provider-budget-paused polish-failed paste-failed paste-clipboard-only usage-limit-reached updater-failed hosted-request-failed internal-error unauthorized invalid-request rate-limit-exceeded method-not-allowed bad-request payload-too-large invalid-operation-id operation-conflict unsupported-contract processing-consent-required invalid-duration operation-id-conflict rate-limit-reached practice-grant-unavailable operation-expired operation-already-exists contract-version-required contract-version-unsupported'.split(' '));
-const STAGES = new Set(['requested', 'listening', 'stopped', 'canceled', 'request', 'auth', 'contract', 'consent', 'quota-precheck', 'body-read', 'body-parse', 'payload-validate', 'rate-limit', 'reserve', 'provider-start', 'stt', 'polish', 'mark-transcribed', 'response', 'service', 'paste', 'return', 'validation', 'bootstrap', 'renderer', 'main', ...LATENCY_PHASES]);
+const STAGES = new Set(['paste-target', 'requested', 'listening', 'stopped', 'canceled', 'request', 'auth', 'contract', 'consent', 'quota-precheck', 'body-read', 'body-parse', 'payload-validate', 'rate-limit', 'reserve', 'provider-start', 'stt', 'polish', 'mark-transcribed', 'response', 'service', 'paste', 'return', 'validation', 'bootstrap', 'renderer', 'main', ...LATENCY_PHASES]);
 const ERROR_TYPES = new Set('Error TypeError RangeError ReferenceError SyntaxError AggregateError AbortError TimeoutError SpeakeasyError HostedProductHttpError HostedProductContractError ClipboardOnlyPasteError NonError'.split(' '));
 const SOURCE_FILES = new Set(['index.js', 'pipeline.js', 'paste.js', 'paste-executor.js', 'hosted-product-client.js', 'product-api.js', 'hosted-product-errors.js', 'product-dictation-service.js', 'groq-dictation-service.js', 'groq.js', 'hosted-operation-settlement.js', 'hosted-operation-outbox.js']);
 const UUID = /^(?:cap_)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -25,6 +26,9 @@ export const sanitizeSupportDetails = (input: unknown): SupportDetails => {
   if (!input || typeof input !== 'object') return {};
   const source = input as Record<string, unknown>;
   const result: SupportDetails = {};
+  if (PASTE_REFUSAL_REASONS.includes(source.pasteReason as typeof PASTE_REFUSAL_REASONS[number])) {
+    result.pasteReason = source.pasteReason as string;
+  }
   if (source.cleanupOutcome !== undefined) {
     result.cleanupOutcome = parseCleanupOutcome(source.cleanupOutcome) ?? 'unknown';
   }
@@ -83,6 +87,7 @@ export const safeErrorDetails = (error: unknown): SupportDetails => {
       if (typeof item.code === 'string' && CODES.has(item.code)) details.code ??= item.code;
       else details.networkCode = item.code;
     }
+    if (item.pasteReason !== undefined) details.pasteReason = item.pasteReason;
     if (item.clipboardWritten === true) details.clipboardWritten = true;
     current = item.cause;
   }

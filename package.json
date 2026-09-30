@@ -1,7 +1,7 @@
 {
   "name": "speakeasy",
   "productName": "Speakeasy",
-  "version": "0.1.42",
+  "version": "0.1.43",
   "description": "Hold-to-talk dictation that transcribes, optionally polishes, and pastes at your cursor.",
   "main": "dist/main/main/index.js",
   "type": "module",

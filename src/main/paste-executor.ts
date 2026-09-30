@@ -1,3 +1,5 @@
+import type { PasteRefusalReason } from '../shared/paste-recovery.js';
+
 export interface ClipboardWriter {
   writeText(text: string): void | Promise<void>;
   readText?(): string | Promise<string>;
@@ -104,7 +106,9 @@ Add-Type -TypeDefinition $source
 `.trim();
 
 export class PasteFocusRecoveryError extends Error {
-  constructor() { super('The original editable field is unavailable or changed.'); this.name = 'PasteFocusRecoveryError'; }
+  constructor(readonly pasteReason: PasteRefusalReason = 'target-unavailable') {
+    super('The original editable field is unavailable or changed.'); this.name = 'PasteFocusRecoveryError';
+  }
 }
 
 /** A focus safety refusal should not force the user back through setup. */
