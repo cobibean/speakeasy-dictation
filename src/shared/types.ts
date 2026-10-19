@@ -94,6 +94,7 @@ export interface AuthState {
   email: string;
   pendingEmail: string;
   message: string;
+  resendAvailableAt?: number;
 }
 
 export interface UsageState {
@@ -283,6 +284,7 @@ export interface RequestMagicLinkPayload {
 
 export interface HostedOnboardingState {
   auth: {
+    resendAvailableAt?: number;
     secureStorageAvailable: boolean;
     secureStorageStatus: 'ready' | 'unavailable' | 'corrupt';
     signedInEmail: string;

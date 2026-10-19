@@ -1,12 +1,21 @@
-import type { ErrorCode } from './types.js';
+import type { AuthState, ErrorCode } from './types.js';
 import { getPasteRecoveryStatus } from './paste-recovery.js';
+
+export const needsUserSignIn = (
+  productAuth: boolean,
+  authStatus: AuthState['status'],
+  errorCode: ErrorCode
+): boolean => productAuth && authStatus !== 'signed-in' && (
+  authStatus === 'signed-out' || authStatus === 'link-sent' ||
+  errorCode === 'auth-required'
+);
 
 export const getErrorStatusText = (errorCode: ErrorCode, platform: string): string => {
   switch (errorCode) {
     case 'missing-api-key':
       return 'Add API Key';
     case 'auth-required':
-      return 'Sign In Required';
+      return 'Needs user sign in';
     case 'usage-limit-reached':
       return 'Usage Limit Reached';
     case 'provider-budget-paused':

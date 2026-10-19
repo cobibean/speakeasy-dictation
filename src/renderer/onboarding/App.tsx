@@ -1,4 +1,5 @@
 import { createRecordingFeedback, prepareRecordingSounds, playRecordingCue } from '../recording-feedback';
+import { useAuthResendCooldown } from '../use-auth-resend-cooldown';
 import { WORKFLOW_PRESETS, getWorkflowPreset } from '../../shared/workflow-presets';
 import { cleanupFallbackMessage, type CleanupOutcome } from '../../shared/cleanup-outcome';
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react';
@@ -210,6 +211,7 @@ const chapterIndexForStep = (step: number, hotkeyVerification: number, nativePas
 
 const App = (): JSX.Element => {
   const [state, setState] = useState<HostedOnboardingState>(createInitialState);
+  const resendSeconds = useAuthResendCooldown(state.auth.resendAvailableAt);
   const [workflowPreset, setWorkflowPreset] = useState('keep');
   const [loading, setLoading] = useState(PREVIEW_STEP === null);
   const [step, setStep] = useState(PREVIEW_STEP ?? 1);
@@ -623,7 +625,7 @@ const App = (): JSX.Element => {
   };
 
   const submitSignIn = async () => {
-    if (!window.speakeasy || !email.trim()) return;
+    if (!window.speakeasy || !email.trim() || busy || resendSeconds > 0) return;
     setBusy(true);
     setError('');
     try {
@@ -990,7 +992,7 @@ const App = (): JSX.Element => {
     }
     if (step === 2) {
       return (
-        <form className="task-form" onSubmit={(event) => { event.preventDefault(); void submitSignIn(); }}>
+        <form className="task-form" onSubmit={(event) => { event.preventDefault(); if (!busy && resendSeconds === 0) void submitSignIn(); }}>
           {state.server ? (
             <div className="result-card" role="status" data-tone="success">
               <StatusGlyph kind="success" />
@@ -1065,9 +1067,10 @@ const App = (): JSX.Element => {
                 onChange={(event) => setEmail(event.target.value)}
                 required
               />
-              <button className="primary-button full-button" type="submit" disabled={busy || !email.trim() || !state.auth.secureStorageAvailable}>
+              <button className="primary-button full-button" type="submit" disabled={busy || resendSeconds > 0 || !email.trim() || !state.auth.secureStorageAvailable}>
                 {busy ? 'Sending securely…' : pendingAuth ? 'Resend secure link' : 'Email me a secure link'}
               </button>
+              {resendSeconds > 0 ? <p className="auth-resend-timer" role="timer" aria-label="Sign-in resend countdown">Send another link in {resendSeconds}s</p> : null}
               {pendingAuth ? (
                 <div className="pending-auth" role="status">
                   <StatusGlyph />
