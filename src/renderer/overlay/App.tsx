@@ -21,7 +21,7 @@ import { DEFAULT_HOTKEY_ID } from '../../shared/hotkeys';
 import { DEFAULT_WIDGET_SIZE_ID, type WidgetSize } from '../../shared/widget-sizes';
 import { getQuietWidgetLayout } from '../../shared/quiet-widget-layout';
 import { DEFAULT_WIDGET_THEME_ID, type WidgetTheme } from '../../shared/widget-themes';
-import { getErrorStatusText } from '../../shared/error-status';
+import { getErrorStatusText, needsUserSignIn } from '../../shared/error-status';
 import { MAX_CAPTURE_DURATION_MS } from '../../shared/capture-policy';
 import { createCaptureGate } from './capture-gate';
 import { createCaptureDeadline, type CaptureDeadline } from './capture-deadline';
@@ -179,10 +179,17 @@ const App = (): JSX.Element => {
     cleanupStrength !== initialCleanupStrength;
   const settingsDirty = isDirty || widgetOpacity !== initialWidgetOpacity;
   const lastCleanupOutcome = runtimeState.diagnostics.lastCleanupOutcome;
+  // Account recovery can disable the hotkey without sending an overlay status.
+  // Keep the blocking state visible until authentication actually completes.
+  const needsSignIn = needsUserSignIn(
+    runtimeState.capabilities.productAuth,
+    runtimeState.auth.status,
+    runtimeState.diagnostics.lastErrorCode
+  );
   const pasteRecovery = status === 'error' && runtimeState.diagnostics.lastErrorCode === 'paste-clipboard-only';
-  const pasteRecoveryNotice = pasteRecovery && !pasteNoticeDismissed;
-  const visibleStatus = pasteRecovery && pasteNoticeDismissed ? 'idle' : status;
-  const cleanupFallback = status === 'idle' && cleanupNoticeVisible && !!cleanupFallbackMessage(lastCleanupOutcome);
+  const pasteRecoveryNotice = !needsSignIn && pasteRecovery && !pasteNoticeDismissed;
+  const visibleStatus = needsSignIn ? 'error' : pasteRecovery && pasteNoticeDismissed ? 'idle' : status;
+  const cleanupFallback = !needsSignIn && status === 'idle' && cleanupNoticeVisible && !!cleanupFallbackMessage(lastCleanupOutcome);
   // Diagnostics retain the result; the visible notice has an independent lifetime.
   // The pipeline clears the outcome before each request, including repeated fallbacks.
   useEffect(() => {
@@ -675,6 +682,13 @@ const App = (): JSX.Element => {
     });
   };
 
+  const openSignIn = async () => {
+    await ensurePill();
+    setCategoryRequest({ category: 'account' });
+    setPanelOpen(true);
+    focusPanelStart('account');
+  };
+
   useEffect(() => {
     if (!window.speakeasy) {
       return;
@@ -826,6 +840,7 @@ const App = (): JSX.Element => {
   }, [panelOpen]);
 
   const getStatusText = (): string => {
+    if (needsSignIn) return getErrorStatusText('auth-required', navigator.platform);
     switch (visibleStatus) {
       case 'listening':
         return 'Listening';
@@ -858,6 +873,7 @@ const App = (): JSX.Element => {
           railReversed={attachment.railReversed}
           status={visibleStatus}
           statusLabel={statusLabel}
+          onSignIn={needsSignIn ? () => void openSignIn() : undefined}
           cleanupFallback={cleanupFallback}
           onDismissCleanup={() => setCleanupNoticeVisible(false)}
           pasteRecovery={pasteRecoveryNotice}

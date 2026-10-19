@@ -16,6 +16,7 @@ interface CursorSpineProps {
   railReversed?: boolean;
   status: OverlayStatus;
   statusLabel: string;
+  onSignIn?: () => void;
   cleanupFallback?: boolean;
   onDismissCleanup?: () => void;
   pasteRecovery?: boolean;
@@ -48,6 +49,7 @@ const CursorSpine = ({
   railReversed = false,
   status,
   statusLabel,
+  onSignIn,
   cleanupFallback = false,
   onDismissCleanup,
   pasteRecovery = false,
@@ -108,13 +110,13 @@ const CursorSpine = ({
       </button>
       <span className="spine-state-pip" aria-hidden="true" />
     </div>
-    {cleanupFallback || pasteRecovery ? (
+    {onSignIn || cleanupFallback || pasteRecovery ? (
       <button
         type="button"
         className="spine-status-label no-drag"
-        aria-label={`${statusLabel}. Dismiss notice`}
-        title="Dismiss notice"
-        onClick={pasteRecovery ? onDismissPasteRecovery : onDismissCleanup}
+        aria-label={`${statusLabel}. ${onSignIn ? 'Open Account & billing' : 'Dismiss notice'}`}
+        title={onSignIn ? 'Open Account & billing' : 'Dismiss notice'}
+        onClick={onSignIn ?? (pasteRecovery ? onDismissPasteRecovery : onDismissCleanup)}
       >{statusLabel}</button>
     ) : <span className="spine-status-label">{statusLabel}</span>}
 

@@ -1,4 +1,6 @@
 import { safeStorage } from 'electron';
+import { AuthLinkRequestGate } from './auth-link-request-gate.js';
+import { AUTH_RESEND_COOLDOWN_MS, isAuthEmailSentStatus } from '../shared/auth-resend.js';
 import {
   AuthResumeSingleFlight,
   isCurrentAuthResume
@@ -53,9 +55,11 @@ interface PendingHostedAuthTransaction {
   expectedEmail: string;
   authGeneration: number;
   expiresAt: string;
+  emailSentAt?: number;
 }
 
 export interface HostedAuthSnapshot {
+  resendAvailableAt?: number;
   secureStorageAvailable: boolean;
   secureStorageStatus: 'ready' | 'unavailable' | 'corrupt';
   signedInEmail: string;
@@ -91,6 +95,9 @@ const sessionRefreshGuard = new SessionRefreshGuard<StoredProductSession>(
 );
 const hostedResumeSingleFlight =
   new AuthResumeSingleFlight<HostedAuthSnapshot>();
+const hostedAuthRequestGate = new AuthLinkRequestGate(
+  () => getStore().get('productAuthResendAvailableAt') ?? 0
+);
 
 // ---------------------------------------------------------------------------
 // Session persistence (encrypted via safeStorage)
@@ -247,6 +254,7 @@ export const hydrateProductAuthState = (): void => {
   const config = getAppConfig();
   const store = getStore();
   const pendingEmail = store.get('productAuthEmail') ?? '';
+  updateAuthState({ resendAvailableAt: store.get('productAuthResendAvailableAt') ?? 0 });
   if (!config.capabilities.productAuth) {
     updateAuthState({
       status: 'disabled',
@@ -583,6 +591,7 @@ const handleHostedStorageError = (error: unknown): never => {
 };
 
 export const initializeHostedProductAuth = async (): Promise<HostedAuthSnapshot> => {
+  updateAuthState({ resendAvailableAt: getStore().get('productAuthResendAvailableAt') ?? 0 });
   if (!usesHostedProductRuntime()) {
     hydrateProductAuthState();
     return getHostedAuthSnapshot();
@@ -601,7 +610,7 @@ export const initializeHostedProductAuth = async (): Promise<HostedAuthSnapshot>
     hostedPending = pending;
     hostedSecureStorageAvailable = true;
     hostedSecureStorageStatus = 'ready';
-    hostedPendingStatus = pending ? 'created' : 'none';
+    hostedPendingStatus = pending ? (pending.emailSentAt ? 'email_sent' : 'created') : 'none';
 
     if (hostedSession) {
       sessionRefreshGuard.recordMutation(hostedSession);
@@ -613,12 +622,12 @@ export const initializeHostedProductAuth = async (): Promise<HostedAuthSnapshot>
       });
     } else {
       updateAuthState({
-        status: pending ? 'link-sent' : 'signed-out',
+        status: pending?.emailSentAt ? 'link-sent' : 'signed-out',
         email: '',
         pendingEmail: pending?.expectedEmail ?? '',
-        message: pending
+        message: pending?.emailSentAt
           ? `Sign-in link sent to ${pending.expectedEmail}.`
-          : 'Sign in with email.'
+          : pending ? 'Checking your sign-in request…' : 'Sign in with email.'
       });
     }
     return getHostedAuthSnapshot(pending);
@@ -661,7 +670,10 @@ export const resetHostedProductLocalSignIn = async (): Promise<HostedAuthSnapsho
   return getHostedAuthSnapshot();
 };
 
-export const requestHostedAuthTransaction = async (
+export const requestHostedAuthTransaction = (normalizedEmail: string): Promise<void> =>
+  hostedAuthRequestGate.run(() => createHostedAuthTransaction(normalizedEmail));
+
+const createHostedAuthTransaction = async (
   normalizedEmail: string
 ): Promise<void> => {
   const secureStore = getProductSecureStore();
@@ -737,16 +749,17 @@ export const requestHostedAuthTransaction = async (
     updateAuthState({
       status: 'error',
       pendingEmail: normalizedEmail,
-      message: 'The sign-in request was saved, but email delivery needs retry.'
+      message: 'The sign-in email could not be sent. Wait a minute, then try again.'
     });
     throw new SpeakeasyError(
       toErrorCode(error, 'auth-failed'),
-      'The sign-in request was saved. Try sending the link again.',
+      'The sign-in email could not be sent. Wait a minute, then try again.',
       error
     );
   }
   updateAuthState({
     status: 'link-sent',
+    resendAvailableAt: store.get('productAuthResendAvailableAt'),
     email: '',
     pendingEmail: normalizedEmail,
     message: `Sign-in link sent to ${normalizedEmail}.`
@@ -764,6 +777,19 @@ const sendHostedAuthEmail = async (
   if (!response.ok) {
     throw new Error(await response.text());
   }
+  // A 202 acknowledges the owned request, including failed delivery. Confirm
+  // its public status before claiming a sent email or starting the cooldown.
+  const confirmation = await hostedAuthFetch('/v1/auth/transaction/status', {
+    transactionId: pending.transactionId
+  });
+  if (!confirmation.ok || !isAuthEmailSentStatus((await confirmation.json()).status)) {
+    throw new Error('Sign-in email delivery was not confirmed.');
+  }
+  pending.emailSentAt ??= Date.now();
+  await getProductSecureStore().write(HOSTED_PENDING_KEY, pending);
+  const availableAt = pending.emailSentAt + AUTH_RESEND_COOLDOWN_MS;
+  getStore().set('productAuthResendAvailableAt', availableAt);
+  updateAuthState({ resendAvailableAt: availableAt });
 };
 
 const resumeHostedPendingAuthTransaction = async (
@@ -950,6 +976,7 @@ export const getHostedAuthSnapshot = (
     hostedPendingStatus === 'none' ? '' : activePending?.expectedEmail ?? '';
   return {
     secureStorageAvailable: hostedSecureStorageAvailable,
+    resendAvailableAt: getStore().get('productAuthResendAvailableAt') ?? 0,
     secureStorageStatus: hostedSecureStorageStatus,
     signedInEmail: hostedSession?.email ?? '',
     pendingEmail,

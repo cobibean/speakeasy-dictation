@@ -1,4 +1,5 @@
 import ThemePreview from './ThemePreview';
+import { useAuthResendCooldown } from '../use-auth-resend-cooldown';
 import { CheckIcon } from '@radix-ui/react-icons';
 import { useEffect, useRef, useState, type JSX } from 'react';
 import type {
@@ -108,6 +109,7 @@ const HudSettingsForm = ({
   onQuit
 }: HudSettingsFormProps): JSX.Element => {
   const { capabilities, auth, usage, billing, updater, diagnostics, accountLifecycle } = runtimeState;
+  const resendSeconds = useAuthResendCooldown(auth.resendAvailableAt);
   const [billingBusy, setBillingBusy] = useState(false);
   const [billingError, setBillingError] = useState('');
   const openCheckout = async (plan: 'standard' | 'pro') => {
@@ -321,6 +323,7 @@ const HudSettingsForm = ({
             </div>
           ) : <form className="hud-field no-drag" onSubmit={(event) => {
             event.preventDefault();
+            if (authBusy || resendSeconds > 0) return;
             void runImmediateChange(onRequestMagicLink);
           }}>
             <div className="hud-control-title">Email</div>
@@ -338,11 +341,16 @@ const HudSettingsForm = ({
               <button
                 type="submit"
                 className="hud-inline-button no-drag"
-                disabled={authBusy || !productAuthEmail.trim()}
+                disabled={authBusy || resendSeconds > 0 || !productAuthEmail.trim()}
               >
                 {authBusy ? 'Sending…' : 'Send sign-in link'}
               </button>
             </div>
+            {resendSeconds > 0 ? (
+              <div className="hud-control-caption hud-body-copy" role="timer" aria-label="Sign-in resend countdown">
+                Send another link in {resendSeconds}s
+              </div>
+            ) : null}
           </form>}
 
           <div className="hud-static-card" hidden={auth.status !== 'signed-in'}>

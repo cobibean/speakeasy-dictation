@@ -15,6 +15,7 @@ export interface AppStoreSchema extends SpeakeasySettings {
   localSchemaVersion?: number;
   deviceId: string;
   authGeneration: number;
+  productAuthResendAvailableAt: number;
   hotkeyVerified: boolean;
   microphonePermissionGranted: boolean;
   onboardingWelcomeCompleted: boolean;
@@ -69,6 +70,7 @@ export const getStore = (): Store<AppStoreSchema> => {
         productAuthEmail: '',
         deviceId: randomUUID(),
         authGeneration: 0,
+        productAuthResendAvailableAt: 0,
         hotkeyVerified: false,
         microphonePermissionGranted: false,
         onboardingWelcomeCompleted: false,
